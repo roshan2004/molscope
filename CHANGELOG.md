@@ -9,6 +9,8 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-05-31
+
 ### Added
 
 - MCP server now exposes the docking-hit triage workflow as four tools
