@@ -38,20 +38,23 @@ The secondary-structure reference additionally needs a system `mkdssp` or
 
 ## Current panel scope
 
-The current reference checks are deliberately small. They are best read as
-targeted scientific smoke tests: `1fqy` exercises a mostly helical protein for
-DSSP-style secondary structure, `1aml` exercises a compact NMR ensemble, `3ptb`
-exercises the bundled binding-site path, and the RDKit checks cover a handful
-of embedded small molecules. The opt-in remote binding-site panel adds `1stp`,
-`1iep`, `3ert`, `1hsg`, `4hvp`, and `2br1` to catch ligand ambiguity,
-multi-chain complexes, cofactors and larger inhibitors. That is useful for
-catching regressions, but it is not yet a benchmark panel.
+The reference checks are targeted scientific smoke tests rather than a full
+benchmark. The DSSP panel spans three fold classes (`1fqy` helical, `1ubq`
+mixed alpha/beta, `1shg` all-beta); the bond and chemistry panels cover 18 and
+12 small molecules respectively across fused rings, O/N/S heteroaromatics,
+halogens, sulfur, amides, a strained ring, and charged/zwitterionic species,
+plus a stretched-bond negative case where distance-only perception is expected
+to fail. `1aml` exercises a real NMR ensemble against MDAnalysis, complemented
+by deterministic synthetic-ensemble invariants for the alignment metrics. `3ptb`
+exercises the bundled binding-site path, and the opt-in remote panel adds
+`1stp`, `1iep`, `3ert`, `1hsg`, `4hvp`, and `2br1` for ligand ambiguity,
+multi-chain complexes, cofactors and larger inhibitors.
 
-Future validation should expand these examples into a curated mini-panel:
-helix-rich, beta-rich and mixed alpha/beta proteins for DSSP; several NMR
-ensembles for alignment metrics; and a broader small-molecule chemistry set
-covering rings, heteroatoms, charged/zwitterionic species, strained geometry
-and known cases where distance-only bond perception should fail.
+This is enough to catch regressions across fold classes and chemistry families,
+but it is still a curated mini-panel, not an exhaustive benchmark. The clearest
+remaining gap is breadth of *real* experimental ensembles for the alignment
+metrics (only `1aml` is bundled); adding a couple more NMR structures would
+strengthen that area without changing the methodology.
 
 ## Reference-tool checks
 
@@ -61,8 +64,8 @@ and known cases where distance-only bond perception should fail.
 | Geometry primitives | MDAnalysis | `tests/validation/test_geometry_ref.py` | `1fqy.pdb` | distances relative `1e-5`; angles/dihedrals absolute `1e-4` degrees | Coordinate precision and degree conversion dominate error. |
 | CA distance/contact maps | MDAnalysis | `tests/validation/test_geometry_ref.py` | `1fqy.pdb` alpha carbons | distance matrix absolute `1e-5`; contact pairs exact at 8 A | Contact-map logic should match an independent distance-threshold implementation. |
 | Ensemble RMSF/RMSD | MDAnalysis | `tests/validation/test_geometry_ref.py` | `1aml.pdb` NMR ensemble | RMSF absolute `1e-3`; Kabsch RMSD absolute `1e-4` | Alignment and trajectory APIs differ slightly, but biologically meaningful values should agree tightly. |
-| Distance bond perception | RDKit topology | `tests/validation/test_bonds_ref.py` | RDKit-embedded small molecules | bond precision and recall each `>= 0.98` | Geometry-only bond perception is expected to recover clean small-molecule topologies, with a small margin for future panel expansion. |
-| Chemical features | RDKit atom/bond APIs | `tests/validation/test_chem_ref.py` | Aromatic, heteroatom and charged small molecules | formal charges and aromatic flags exact; bond orders exact within `1e-12` | MolScope delegates optional chemical perception to RDKit, so direct RDKit arrays are the reference. |
+| Distance bond perception | RDKit topology | `tests/validation/test_bonds_ref.py` | 18 small molecules spanning fused rings, O/N/S heteroaromatics, halogens, sulfoxide, amide and a strained ring; plus a stretched-bond negative case | bond precision and recall each `>= 0.98` on clean geometries; the stretched bond is expected to be *missed* | Geometry-only perception should recover clean equilibrium topologies, and should provably fail on non-equilibrium geometry (the honest reason template bonds exist). |
+| Chemical features | RDKit atom/bond APIs | `tests/validation/test_chem_ref.py` | 12 molecules: aromatics, O/N/S heteroaromatics, anion, cation, zwitterion, and histidine | formal charges and aromatic flags exact; bond orders exact within `1e-12` | MolScope delegates optional chemical perception to RDKit, so direct RDKit arrays are the reference. |
 | RDKit descriptors | RDKit descriptor APIs | `tests/validation/test_chem_ref.py` | Same chemistry panel | selected scalar descriptors relative/absolute `1e-12` | Descriptor wrappers should not alter RDKit descriptor values. |
 | Secondary structure | `mkdssp` / `dssp` | `tests/validation/test_dssp_ref.py` | `1fqy.pdb` (helical), `1ubq.pdb` (mixed alpha/beta), `1shg.pdb` (all-beta) | 3-state helix/strand/coil agreement per fold (`>= 0.95` helical, `>= 0.90` mixed and all-beta); helix fraction within `0.15` | MolScope's DSSP is simplified and educational, so reduced-state agreement is the honest target rather than byte-for-byte 8-state equality. The set spans three fold classes so agreement is reported as a range, not a single helical best case. |
 | Binding sites | RCSB structures with HETATM ligands | `tests/validation/test_binding_sites_ref.py` | `3ptb`; opt-in remote panel `1stp`, `1iep`, `3ert`, `1hsg`, `4hvp`, `2br1` | residue records and `pocket-basic` descriptors finite and internally consistent | Real protein-ligand files expose ambiguity, multi-chain sites, cofactors, ions and larger inhibitors better than synthetic fixtures. |
@@ -78,6 +81,7 @@ and known cases where distance-only bond perception should fail.
 | Radius of gyration | `tests/validation/test_invariants.py` | Uniform shell has radius of gyration equal to shell radius | Absolute `< 1e-3` |
 | Coarse-graining | `tests/validation/test_invariants.py` | Residue COM and centroid beads equal direct reductions of source atoms | Absolute `< 1e-9` |
 | Contact maps | `tests/validation/test_invariants.py` | Atom contact map equals brute-force all-pairs threshold | Exact matrix equality |
+| Ensemble alignment | `tests/validation/test_invariants.py` | A rigidly-moving ensemble has zero RMSF and zero pairwise RMSD after superposition; a single displaced atom carries the largest RMSF | Absolute `< 1e-5`; argmax exact |
 | Consensus ranking | `tests/validation/test_docking_ref.py` | A single score field reproduces that field's ranking; a pose best on every field takes rank 1 | Exact order |
 | Ligand efficiency | `tests/validation/test_docking_ref.py` | Equals the signed score per heavy atom | Relative `1e-9` |
 | Diversity selection | `tests/validation/test_docking_ref.py` | Identical molecules collapse to one (best-scoring) representative; representatives come from distinct clusters | Exact |
