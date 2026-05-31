@@ -606,3 +606,52 @@ def test_dock_report_writes_html_and_poses(server, tmp_path):
     written = {os.path.basename(p) for p in out["written"]}
     assert "dock_report.html" in written and "top_poses.sdf" in written
     assert "<!DOCTYPE html>" in (tmp_path / "dock_report.html").read_text()
+
+
+def test_dock_summary_higher_is_better_explicit(server):
+    out = _json(
+        server, "dock_summary", source=DOCK_SDF, score_field="CNNscore",
+        higher_is_better=True, with_smiles=False,
+    )
+    assert out["direction"] == "higher_is_better"
+    assert out["rows"][0]["score"] >= out["rows"][-1]["score"]
+
+
+def test_dock_diverse_without_save_dir(server, tmp_path):
+    pytest.importorskip("rdkit")
+    sdf = _write_ligand_sdf(tmp_path / "vina.sdf")
+    out = _json(
+        server, "dock_diverse", source=sdf, score_field="minimizedAffinity",
+        top=6, select=2, threshold=0.5,
+    )
+    assert len(out["selected"]) == 2
+    assert "written" not in out                       # no files when save_dir omitted
+
+
+def test_dock_rank_writes_csv_with_overrides(server, tmp_path):
+    out_csv = tmp_path / "ranking.csv"
+    out = _json(
+        server, "dock_rank", sources=[DOCK_SDF], score_fields=["minimizedAffinity"],
+        lower_is_better=["minimizedAffinity"], save_path=str(out_csv),
+    )
+    assert out["directions"]["minimizedAffinity"] == "lower_is_better"
+    assert out["assumed_direction"] == []
+    assert out_csv.exists()
+    assert "final_rank" in out_csv.read_text().splitlines()[0]
+
+
+def test_dock_report_with_clusters(server, tmp_path):
+    pytest.importorskip("rdkit")
+    sdf = _write_ligand_sdf(tmp_path / "vina.sdf")
+    out = _json(
+        server, "dock_report", source=sdf, save_dir=str(tmp_path / "rep"),
+        score_field="minimizedAffinity", top=6, select=2, threshold=0.5,
+    )
+    assert out["n_clusters"] is not None and out["n_clusters"] >= 1
+    html = (tmp_path / "rep" / "dock_report.html").read_text()
+    assert "Diverse representatives" in html
+
+
+def test_dock_tools_reject_missing_file(server):
+    with pytest.raises(Exception, match="no such SDF file"):
+        _json(server, "dock_summary", source="/no/such/file.sdf")
