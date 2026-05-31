@@ -151,7 +151,11 @@ class GraphDataset:
             if fmt == "pyg":
                 import torch
 
-                graphs.append(torch.load(fpath))
+                # PyG ``Data`` objects are not plain tensors, so the safe
+                # unpickler that ``torch.load`` defaults to since PyTorch 2.6
+                # (weights_only=True) refuses to load them. These files are
+                # written by our own ``save()``, so loading them fully is safe.
+                graphs.append(torch.load(fpath, weights_only=False))
             elif fmt == "dgl":
                 from dgl.data.utils import load_graphs
 
