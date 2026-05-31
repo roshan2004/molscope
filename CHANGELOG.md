@@ -9,6 +9,29 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+### Added
+
+- Streaming SDF readers for large docking files: ``stream_sdf_frames`` and
+  ``molscope.docking.stream_poses`` / ``PoseStream`` yield records one at a time,
+  keeping memory O(1) in the number of poses. ``ms.stream(...)`` now dispatches to
+  SDF too. The ``dock-*`` commands and MCP tools read via ``PoseStream``, so a
+  multi-hundred-thousand-pose file no longer has to be held in memory at once.
+- ``dock-summary``/``dock-report`` (and the matching MCP tools) collapse multiple
+  poses of the same compound to its single best pose by default
+  (``--best-pose-per-ligand``, on by default; ``--no-best-pose-per-ligand`` to
+  keep every pose). Compounds are keyed by SMILES when available, else by name
+  with explicit pose suffixes (``_pose1``, ``_conf1`` …) removed. ``n_poses``
+  still reports the total poses read; ``n_ranked`` reports the rows shown.
+- ``dock-diverse`` now reports how many poses were dropped because RDKit could
+  not build a fingerprint for them (``n_failed_fp``), instead of silently
+  shrinking the pool.
+
+### Fixed
+
+- The streaming SDF reader no longer silently drops a record when a blank line
+  pads the gap between ``$$$$`` and the next record's title (a common writer
+  quirk).
+
 ## [0.11.0] - 2026-05-31
 
 ### Added

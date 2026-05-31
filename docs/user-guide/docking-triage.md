@@ -33,6 +33,16 @@ field name (affinities are lower-is-better, Gnina CNN outputs higher-is-better);
 override with `--higher-is-better` / `--lower-is-better`. Ligand efficiency is
 the score per heavy atom, signed so a more favourable hit scores higher.
 
+By default the table keeps only the **best pose per compound** (real docking
+output has many poses per ligand, so otherwise a "top 50" could be 50 poses of a
+handful of compounds). Compounds are keyed by SMILES when available, else by name
+with explicit pose suffixes (`_pose1`, `_conf1`, …) stripped. Pass
+`--no-best-pose-per-ligand` to keep every pose. The reported pose count is always
+the true total read; the table length reflects what is shown.
+
+Files are read as a **stream**, one pose at a time, so multi-hundred-thousand-pose
+SDFs are processed without loading the whole file into memory.
+
 ## `dock-diverse`: a shortlist that is not 50 analogues
 
 ```bash
