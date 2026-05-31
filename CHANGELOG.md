@@ -11,6 +11,42 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- Docking-hit triage commands for making sense of a virtual screen's output SDF,
+  exposed both on the CLI and as functions in ``molscope.docking``:
+  - ``molscope dock-summary results.sdf --score-field minimizedAffinity``: rank
+    poses by a score field (auto-detected when omitted), extract name, SMILES,
+    pose id, score, heavy-atom count and ligand efficiency, and write
+    ``dock_summary.csv``, ``top_hits.csv`` and ``score_distribution.png``. Core
+    install only; the SMILES column needs RDKit and is left blank without it.
+  - ``molscope dock-diverse results.sdf --top 500 --select 50``: rank, keep the
+    best N, Morgan-fingerprint them, Butina-cluster by Tanimoto similarity, and
+    keep the best-scoring representative of each cluster so a shortlist is not 50
+    near-identical analogues. Writes ``diverse_hits.sdf`` (faithful pose
+    re-export) and ``diverse_hits.csv``; reports when fewer clusters exist than
+    requested instead of silently returning a short list. Needs RDKit.
+  - ``molscope dock-rank vina.sdf gnina.sdf --method consensus``: join hits
+    across one or more scored SDFs by name (or SMILES), rank each score field by
+    its own direction, and aggregate by mean rank. Optional ligand efficiency and
+    MW/logP filters. The output table is transparent: it reports which fields and
+    directions were used and states plainly that the consensus rank is a triage
+    heuristic, not a calibrated affinity.
+  - ``molscope dock-report results.sdf``: assemble a single self-contained
+    ``dock_report.html`` (ranked hit table, embedded score histogram, and a grid
+    of diverse cluster representatives drawn as 2D depictions) plus a
+    ``top_poses.sdf`` for loading into PyMOL, ChimeraX, or Mol*. It is a static
+    file you can email or archive, not a server; the depictions need RDKit and
+    the section is omitted gracefully without it.
+- ``read_sdf_frames``: read every record of a multi-record ``.sdf`` as a list of
+  ``Molecule`` objects, keeping each pose's 3D coordinates. This is the common
+  output format for docking tools (AutoDock Vina, Gnina, Smina), one record per
+  pose with the score in a ``> <tag>`` data field. Each molecule's data fields
+  (e.g. ``minimizedAffinity``, ``CNNaffinity``, ``CNNscore``) are captured into a
+  new ``Molecule.properties`` dict, so poses can be ranked, filtered, and fed
+  straight into the existing descriptor/contact-map/diversity tools without the
+  RDKit SMILES round-trip (which discards the 3D pose). Core install only — no
+  extras needed. ``read_sdf`` likewise now populates ``properties`` from the
+  first record's data fields. Malformed records are skipped rather than aborting
+  the whole file.
 - ``build_dataset``: assemble an ML graph dataset from structure files in one
   call. Discovers files (glob, list of paths, or list of ``Molecule`` objects),
   featurises each to a graph (``fmt="pyg"``/``"dgl"``/``"networkx"``/``"raw"``)

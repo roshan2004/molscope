@@ -95,6 +95,28 @@ V2000 connection table stores the chemistry that PDB and XYZ lack.
 Use SDF for ligands, drug-like molecules, and any workflow where bonds, bond
 orders, and charges must be exact.
 
+### Multi-pose SDF and docking output
+
+Docking tools (AutoDock Vina, Gnina, Smina) write one SDF record per pose, with
+the score in a `> <tag>` data field. [`read_sdf`](../api-reference.md) reads the
+first record; [`read_sdf_frames`](../api-reference.md) reads every pose as a list
+of molecules, keeping each pose's 3D coordinates and exposing its data fields via
+`Molecule.properties`:
+
+```python
+import molscope as ms
+
+poses = ms.read_sdf_frames("vina_out.sdf")        # core install, no extras
+best = min(poses, key=lambda m: float(m.properties["minimizedAffinity"]))
+print(best.name, best.properties["minimizedAffinity"])
+```
+
+Because the 3D pose is preserved (unlike an RDKit round-trip through SMILES),
+each pose flows straight into MolScope's descriptor, contact-map, and diversity
+tools, so a hit list can be ranked, de-duplicated, and triaged in place. Common
+score tags are `minimizedAffinity` (Vina/Smina) and `CNNaffinity` / `CNNscore`
+(Gnina); the values are kept as raw strings, so cast to `float` before sorting.
+
 ## Choosing a format
 
 - Quantum chemistry, tiny molecules, geometry only: **XYZ**.

@@ -4,7 +4,8 @@
 
 - `molscope.read(path)`: read a molecule by extension.
 - `molscope.fetch(pdb_id, fmt="pdb")`: download from RCSB and read.
-- `molscope.read_pdb(path)`, `read_pdb_models(path)`, `read_xyz(path)`, `read_xyz_frames(path)`, `read_cif(path)`, `read_sdf(path)`.
+- `molscope.read_pdb(path)`, `read_pdb_models(path)`, `read_xyz(path)`, `read_xyz_frames(path)`, `read_cif(path)`, `read_sdf(path)`, `read_sdf_frames(path)`.
+- `molscope.read_sdf_frames(path)`: read every record of a multi-record SDF as a list of molecules (one per docking pose), keeping each pose's 3D coordinates and exposing its `> <tag>` data fields (e.g. Vina/Gnina scores) via `Molecule.properties`.
 - `molscope.validate_cif(path)`: optional Gemmi-backed CIF/mmCIF validation.
 - `molscope.write_pdb(molecule, path)`, `write_xyz(molecule, path)`.
 - `molscope.featurize_many(paths, return_names=False)`: build an ML feature matrix.
@@ -61,3 +62,4 @@ Common methods:
 - `molscope.descriptors`: descriptor helpers and batch featurization.
 - `molscope.graph`: graph container and backend exporters.
 - `molscope.chem`: optional RDKit-backed chemical perception and descriptors.
+- `molscope.docking`: post-docking triage — `read_poses`, `summarize`, `select_diverse_hits`, and `consensus_rank` behind the `dock-summary`, `dock-diverse`, and `dock-rank` CLI commands. See [Docking-hit triage](user-guide/docking-triage.md).

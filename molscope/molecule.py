@@ -163,6 +163,10 @@ class Molecule:
     formal_charges: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     virtual_sites: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=bool))
     unit_cell: Optional[UnitCell] = None
+    # Molecule-level metadata, e.g. SDF ``> <tag>`` data fields (docking scores
+    # like ``minimizedAffinity`` / ``CNNaffinity``, titles, ids). Values are kept
+    # as raw strings, exactly as the source file recorded them.
+    properties: dict[str, str] = field(default_factory=dict)
     _mapping_report: Optional[Any] = field(default=None, repr=False, compare=False)
 
     # Track selection lineage to enable boolean logic (e.g. mol1 & mol2).

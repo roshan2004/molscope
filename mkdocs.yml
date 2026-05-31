@@ -37,6 +37,7 @@ nav:
       - Structural descriptors: user-guide/descriptors.md
       - Coarse-graining: user-guide/coarse-graining.md
       - Diverse selection from a table: user-guide/library-selection.md
+      - Docking-hit triage: user-guide/docking-triage.md
       - MCP server (AI assistants): user-guide/mcp-server.md
   - Examples:
       - Overview: examples/index.md
