@@ -66,6 +66,7 @@ and known cases where distance-only bond perception should fail.
 | RDKit descriptors | RDKit descriptor APIs | `tests/validation/test_chem_ref.py` | Same chemistry panel | selected scalar descriptors relative/absolute `1e-12` | Descriptor wrappers should not alter RDKit descriptor values. |
 | Secondary structure | `mkdssp` / `dssp` | `tests/validation/test_dssp_ref.py` | `1fqy.pdb` (helical), `1ubq.pdb` (mixed alpha/beta), `1shg.pdb` (all-beta) | 3-state helix/strand/coil agreement per fold (`>= 0.95` helical, `>= 0.90` mixed and all-beta); helix fraction within `0.15` | MolScope's DSSP is simplified and educational, so reduced-state agreement is the honest target rather than byte-for-byte 8-state equality. The set spans three fold classes so agreement is reported as a range, not a single helical best case. |
 | Binding sites | RCSB structures with HETATM ligands | `tests/validation/test_binding_sites_ref.py` | `3ptb`; opt-in remote panel `1stp`, `1iep`, `3ert`, `1hsg`, `4hvp`, `2br1` | residue records and `pocket-basic` descriptors finite and internally consistent | Real protein-ligand files expose ambiguity, multi-chain sites, cofactors, ions and larger inhibitors better than synthetic fixtures. |
+| Multi-pose SDF parsing | RDKit `SDMolSupplier` | `tests/validation/test_docking_ref.py` | Hand-authored `docking_poses.sdf`; generated bonded ligands (benzene, aspirin, caffeine) | pose count and titles exact; score data fields exact; coordinates absolute `1e-4` | `read_poses` underlies every dock-* tool; an independent SDF parser is the natural reference. The hand-authored fixture is written by neither library, so this is a true two-parser cross-check. |
 
 ## Invariant checks
 
@@ -77,6 +78,9 @@ and known cases where distance-only bond perception should fail.
 | Radius of gyration | `tests/validation/test_invariants.py` | Uniform shell has radius of gyration equal to shell radius | Absolute `< 1e-3` |
 | Coarse-graining | `tests/validation/test_invariants.py` | Residue COM and centroid beads equal direct reductions of source atoms | Absolute `< 1e-9` |
 | Contact maps | `tests/validation/test_invariants.py` | Atom contact map equals brute-force all-pairs threshold | Exact matrix equality |
+| Consensus ranking | `tests/validation/test_docking_ref.py` | A single score field reproduces that field's ranking; a pose best on every field takes rank 1 | Exact order |
+| Ligand efficiency | `tests/validation/test_docking_ref.py` | Equals the signed score per heavy atom | Relative `1e-9` |
+| Diversity selection | `tests/validation/test_docking_ref.py` | Identical molecules collapse to one (best-scoring) representative; representatives come from distinct clusters | Exact |
 
 ## Assumptions and failure modes
 
@@ -87,6 +91,7 @@ and known cases where distance-only bond perception should fail.
 | Contact maps | Static coordinates and a chosen distance cutoff/method (`ca`, `com`, or `min`) | Different cutoffs or representative atoms change the result; dense atom maps are `O(N^2)`. |
 | Simplified DSSP | Complete protein backbone atoms (`N`, `CA`, `C`, `O`) and standard residue ordering | Not canonical `mkdssp`; boundary residues of helices and strands are where disagreements concentrate; bare XYZ input is insufficient. |
 | Coarse-graining | Beads are coordinate reductions and simple bead graphs for inspection | No force-field parameters, charges, exclusions, elastic networks, or validation of simulation behavior. |
+| Docking triage | A score data field is present in the SDF; V2000 records; fingerprint-based similarity for clustering | Reads docking output but does not dock, prepare, or re-score; the consensus rank is rank aggregation, not a calibrated affinity; diversity depends on the fingerprint and Tanimoto threshold. |
 
 ## Updating validation
 
