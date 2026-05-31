@@ -1,6 +1,7 @@
 """Tests for the docking post-processing module and its CLI subcommands."""
 
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -346,3 +347,101 @@ def test_dock_report_cli_with_clusters(tmp_path):
     ])
     assert rc == 0
     assert "Diverse representatives" in (out / "dock_report.html").read_text()
+
+
+# -- reader edge cases and small helpers ------------------------------------
+
+def test_read_poses_empty_file_errors(tmp_path):
+    empty = tmp_path / "empty.sdf"
+    empty.write_text("\n\n$$$$\n")
+    with pytest.raises(ValueError, match="no readable records"):
+        docking.read_poses(str(empty))
+
+
+def test_read_poses_skips_malformed_and_keeps_unterminated(tmp_path):
+    sdf = tmp_path / "messy.sdf"
+    sdf.write_text(
+        "broken\n p\n\n   X  0  0  0  0  0  0  0  0  0999 V2000\nM  END\n$$$$\n"
+        "good\n p\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n>  <score>\n-3.0\n"          # no trailing $$$$
+    )
+    poses = docking.read_poses(str(sdf))
+    assert [p.name for p in poses] == ["good"]
+    assert poses[0].score("score") == pytest.approx(-3.0)
+
+
+def test_resolve_score_field_autodetect_failure(tmp_path):
+    sdf = tmp_path / "x.sdf"
+    sdf.write_text(
+        "m\n p\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n>  <comment>\nhello\n\n$$$$\n"
+    )
+    poses = docking.read_poses(str(sdf))
+    with pytest.raises(ValueError, match="could not auto-detect"):
+        docking.resolve_score_field(poses, None)
+
+
+def test_to_float_and_ligand_efficiency_and_better():
+    assert np.isnan(docking._to_float(None))
+    assert np.isnan(docking._to_float("not a number"))
+    assert docking._to_float(" -7.5 ") == pytest.approx(-7.5)
+    assert np.isnan(docking._ligand_efficiency(-8.0, 0, False))   # no heavy atoms
+    assert docking._ligand_efficiency(-8.0, 4, False) == pytest.approx(2.0)
+    assert docking._ligand_efficiency(0.9, 4, True) == pytest.approx(0.225)
+    assert docking._better(0.9, 0.5, True) and not docking._better(0.9, 0.5, False)
+
+
+# -- graceful degradation when RDKit is unavailable -------------------------
+
+def test_smiles_perceiver_is_none_without_rdkit(monkeypatch):
+    monkeypatch.setitem(sys.modules, "rdkit", None)
+    assert docking._smiles_perceiver() is None
+
+
+def test_molecule_svg_empty_without_rdkit(monkeypatch):
+    monkeypatch.setitem(sys.modules, "rdkit", None)
+    poses = docking.read_poses(POSES_SDF)
+    assert docking.molecule_svg(poses[0].molecule) == ""
+
+
+def test_summarize_leaves_smiles_blank_without_rdkit(monkeypatch):
+    monkeypatch.setitem(sys.modules, "rdkit", None)
+    poses = docking.read_poses(POSES_SDF)
+    result = docking.summarize(poses, "minimizedAffinity", higher_is_better_flag=False)
+    assert not result.with_smiles
+    assert all(r["smiles"] == "" for r in result.rows)
+
+
+def test_select_diverse_requires_rdkit(monkeypatch):
+    monkeypatch.setitem(sys.modules, "rdkit", None)
+    poses = docking.read_poses(POSES_SDF)
+    with pytest.raises(ImportError):
+        docking.select_diverse_hits(poses, "minimizedAffinity", higher_is_better_flag=False)
+
+
+def test_consensus_smiles_key_requires_rdkit(monkeypatch):
+    monkeypatch.setitem(sys.modules, "rdkit", None)
+    poses = docking.read_poses(POSES_SDF)
+    with pytest.raises(ValueError, match="needs RDKit"):
+        docking.consensus_rank(
+            [("f", poses)], score_fields=["minimizedAffinity"], key="smiles",
+        )
+
+
+def test_render_report_shows_no_depiction_placeholder_without_rdkit(monkeypatch, tmp_path):
+    pytest.importorskip("rdkit")
+    sdf = _write_ligand_sdf(tmp_path / "vina.sdf")
+    poses = docking.read_poses(sdf)
+    summary = docking.summarize(poses, "minimizedAffinity", higher_is_better_flag=False)
+    diverse = docking.select_diverse_hits(
+        poses, "minimizedAffinity", higher_is_better_flag=False,
+        top=8, select=2, threshold=0.5,
+    )
+    # Depictions need RDKit at render time; force it absent and check the fallback.
+    monkeypatch.setitem(sys.modules, "rdkit", None)
+    html = docking.render_html_report(
+        summary, source_name="vina.sdf", n_poses=len(poses), diverse=diverse,
+    )
+    assert "no depiction" in html
