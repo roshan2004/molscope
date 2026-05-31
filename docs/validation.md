@@ -85,6 +85,8 @@ strengthen that area without changing the methodology.
 | Consensus ranking | `tests/validation/test_docking_ref.py` | A single score field reproduces that field's ranking; a pose best on every field takes rank 1 | Exact order |
 | Ligand efficiency | `tests/validation/test_docking_ref.py` | Equals the signed score per heavy atom | Relative `1e-9` |
 | Diversity selection | `tests/validation/test_docking_ref.py` | Identical molecules collapse to one (best-scoring) representative; representatives come from distinct clusters | Exact |
+| Graph export | `tests/validation/test_graph_invariants.py` | Node count equals atom count, edge set equals the bond set, adjacency is symmetric; NetworkX and PyG exports preserve the same nodes/edges | Exact |
+| Dataset assembly | `tests/validation/test_graph_invariants.py` | `build_dataset` keeps ids/labels/graphs aligned and survives a raw save/load round trip | Exact |
 
 ## Assumptions and failure modes
 
