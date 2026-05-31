@@ -63,6 +63,7 @@ from .contacts import (
     ligands,
     pocket_descriptor_feature_names,
 )
+from .dataset import GraphDataset, build_dataset
 from .descriptors import descriptor_feature_names, descriptors, featurize_many, inertia_tensor
 from .dssp import BackboneTorsions, SecondaryStructure, SSSegment, backbone_torsions
 from .ensemble import Clustering, cluster, rmsd_matrix
@@ -107,6 +108,8 @@ __all__ = [
     "CoarseGrainReport",
     "ContactMap",
     "DroppedAtom",
+    "GraphDataset",
+    "build_dataset",
     "Interface",
     "LigandResidue",
     "Molecule",

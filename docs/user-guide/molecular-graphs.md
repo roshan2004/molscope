@@ -119,3 +119,33 @@ pip install "molscope[gnn]"    # all graph backends
 
 For custom CUDA, ROCm, Apple Silicon, or cluster builds, install the matching
 PyTorch stack from the backend project's instructions first.
+
+## Building a dataset in one call
+
+To go from a folder of structures to a split, label-joined set of graphs without
+writing the loop yourself, use [`build_dataset`](../api-reference.md):
+
+```python
+import molscope as ms
+
+ds = ms.build_dataset(
+    "data/*.pdb",                 # glob, list of paths, or list of Molecules
+    fmt="pyg",                    # "pyg" | "dgl" | "networkx" | "raw"
+    node_features="ml",
+    edge_features="geom",
+    pe="laplacian", pe_k=8,       # optional positional encodings (pyg/dgl)
+    labels="labels.csv",          # optional id->target table, joined by file stem
+    split=(0.8, 0.1, 0.1),        # optional random train/val/test split
+    n_jobs=4,
+)
+
+print(ds.summary())
+ds.train, ds.val, ds.test         # framework graph objects, ready for a DataLoader
+ds.save("out/")                   # graphs + a manifest.json
+```
+
+It is a thin wrapper over the exporters above, so `fmt="pyg"`/`"dgl"` need their
+extras while `fmt="raw"` (a `MolecularGraph`) and `fmt="networkx"` run on the
+core install. Unreadable inputs are skipped and recorded in `ds.skipped` unless
+you pass `on_error="raise"`. It stops at DataLoader-ready objects: no training
+loop or model code.

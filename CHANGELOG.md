@@ -11,6 +11,14 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``build_dataset``: assemble an ML graph dataset from structure files in one
+  call. Discovers files (glob, list of paths, or list of ``Molecule`` objects),
+  featurises each to a graph (``fmt="pyg"``/``"dgl"``/``"networkx"``/``"raw"``)
+  with optional positional encodings, joins labels from a dict or CSV, and
+  applies an optional random train/val/test split. Returns a ``GraphDataset``
+  with ``.train``/``.val``/``.test``, ``.summary()`` and ``.save()``. It is a
+  thin layer over the existing exporters, so ``pyg``/``dgl`` need their extras
+  and ``raw``/``networkx`` run on the core install.
 - MCP server now accepts SMILES anywhere a structure ``source`` is expected:
   pass ``"smiles:<SMILES>"`` (e.g. ``"smiles:CCO"``) to any of the 23 tools and it
   builds the molecule from one RDKit conformer (``chem`` extra). This makes the
