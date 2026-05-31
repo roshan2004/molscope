@@ -44,8 +44,10 @@ mixed alpha/beta, `1shg` all-beta); the bond and chemistry panels cover 18 and
 12 small molecules respectively across fused rings, O/N/S heteroaromatics,
 halogens, sulfur, amides, a strained ring, and charged/zwitterionic species,
 plus a stretched-bond negative case where distance-only perception is expected
-to fail. `1aml` exercises a real NMR ensemble against MDAnalysis, complemented
-by deterministic synthetic-ensemble invariants for the alignment metrics. `3ptb`
+to fail. a panel of real solution-NMR ensembles (`1aml`, plus the gzipped `1d3z`, `2lz3`,
+`6qfp`, `1gab`, and the opt-in remote `6v5d`) cross-checks the alignment metrics
+against MDAnalysis, complemented by deterministic synthetic-ensemble invariants.
+`3ptb`
 exercises the bundled binding-site path, and the opt-in remote panel adds
 `1stp`, `1iep`, `3ert`, `1hsg`, `4hvp`, and `2br1` for ligand ambiguity,
 multi-chain complexes, cofactors and larger inhibitors.
@@ -55,10 +57,7 @@ dataset-prep pipeline end to end on real, messy SMILES -- scaffold/random splits
 canonical deduplication and fingerprinting -- and doubles as a large-scale
 descriptor wrapper-transparency check against a fresh RDKit call. This is enough
 to catch regressions across fold classes and chemistry families, but it is still
-a curated mini-panel, not an exhaustive benchmark. The clearest
-remaining gap is breadth of *real* experimental ensembles for the alignment
-metrics (only `1aml` is bundled); adding a couple more NMR structures would
-strengthen that area without changing the methodology.
+a curated mini-panel, not an exhaustive benchmark.
 
 ## Reference-tool checks
 
@@ -68,6 +67,7 @@ strengthen that area without changing the methodology.
 | Geometry primitives | MDAnalysis | `tests/validation/test_geometry_ref.py` | `1fqy.pdb` | distances relative `1e-5`; angles/dihedrals absolute `1e-4` degrees | Coordinate precision and degree conversion dominate error. |
 | CA distance/contact maps | MDAnalysis | `tests/validation/test_geometry_ref.py` | `1fqy.pdb` alpha carbons | distance matrix absolute `1e-5`; contact pairs exact at 8 A | Contact-map logic should match an independent distance-threshold implementation. |
 | Ensemble RMSF/RMSD | MDAnalysis | `tests/validation/test_geometry_ref.py` | `1aml.pdb` NMR ensemble | RMSF absolute `1e-3`; Kabsch RMSD absolute `1e-4` | Alignment and trajectory APIs differ slightly, but biologically meaningful values should agree tightly. |
+| Ensemble RMSF/RMSD (NMR panel) | MDAnalysis | `tests/validation/test_ensembles_ref.py` | bundled `1d3z`, `2lz3`, `6qfp`, `1gab`; opt-in remote `6v5d` | RMSF absolute `1e-3`; Kabsch RMSD absolute `1e-4` | Real solution-NMR ensembles across sizes and folds, gzipped to ~1 MB. `2hyn` (remote) additionally confirms that an ensemble whose models carry inconsistent atom counts is rejected, not silently misaligned. |
 | Distance bond perception | RDKit topology | `tests/validation/test_bonds_ref.py` | 18 small molecules spanning fused rings, O/N/S heteroaromatics, halogens, sulfoxide, amide and a strained ring; plus a stretched-bond negative case | bond precision and recall each `>= 0.98` on clean geometries; the stretched bond is expected to be *missed* | Geometry-only perception should recover clean equilibrium topologies, and should provably fail on non-equilibrium geometry (the honest reason template bonds exist). |
 | Chemical features | RDKit atom/bond APIs | `tests/validation/test_chem_ref.py` | 12 molecules: aromatics, O/N/S heteroaromatics, anion, cation, zwitterion, and histidine | formal charges and aromatic flags exact; bond orders exact within `1e-12` | MolScope delegates optional chemical perception to RDKit, so direct RDKit arrays are the reference. |
 | RDKit descriptors | RDKit descriptor APIs | `tests/validation/test_chem_ref.py` | Same chemistry panel | selected scalar descriptors relative/absolute `1e-12` | Descriptor wrappers should not alter RDKit descriptor values. |
