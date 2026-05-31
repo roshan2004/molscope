@@ -133,6 +133,21 @@ def _load(source: str, bond_perception: str = "geometric", protonation: str = "n
     )
 
 
+def _dock_path(source: str) -> str:
+    """Resolve a docking-output SDF path. Unlike ``_load`` this keeps every pose.
+
+    Docking tools read a multi-record ``.sdf`` (one record per pose), so they
+    take a literal local file path, never a PDB id or SMILES.
+    """
+    path = os.path.abspath(os.path.expanduser(source.strip()))
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"{source!r}: no such SDF file. Docking tools take a path to a local "
+            "docking-output .sdf (one record per pose)."
+        )
+    return path
+
+
 def _three_state(code: str) -> str:
     return {"H": "H", "G": "H", "I": "H", "E": "E", "B": "E"}.get(code, "C")
 
@@ -755,6 +770,239 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
              "groups": duplicate_groups[:_MAX_ROWS]},
             indent=2, default=_jsonable,
         )
+
+    @server.tool(title="Summarise docking hits", annotations=WRITE_LOCAL)
+    @_friendly_errors
+    def dock_summary(
+        source: str, score_field: Optional[str] = None, top: int = 10,
+        higher_is_better: Optional[bool] = None, with_smiles: bool = True,
+        save_dir: Optional[str] = None,
+    ) -> str:
+        """Rank docking poses from an output SDF and summarise the hits.
+
+        ``source`` is a path to a docking-output ``.sdf`` (one record per pose, as
+        written by AutoDock Vina, Gnina or Smina). ``score_field`` is the
+        ``> <tag>`` data field holding the score; omit it to auto-detect a known
+        field (e.g. ``minimizedAffinity``, ``CNNscore``). Direction is inferred
+        from the field name unless ``higher_is_better`` is set. SMILES need RDKit
+        and are blank without it. Returns the ranked rows (best first) with score,
+        ligand efficiency and heavy-atom count; pass ``save_dir`` to also write
+        ``dock_summary.csv``, ``top_hits.csv`` and ``score_distribution.png``.
+        """
+        from . import docking
+
+        poses = docking.read_poses(_dock_path(source))
+        field = docking.resolve_score_field(poses, score_field)
+        higher, assumed = (
+            docking.higher_is_better(field) if higher_is_better is None
+            else (higher_is_better, False)
+        )
+        result = docking.summarize(
+            poses, field, higher_is_better_flag=higher,
+            direction_assumed=assumed, with_smiles=with_smiles,
+        )
+        columns = ["rank", "pose_id", "name", "smiles", "score",
+                   "ligand_efficiency", "n_heavy_atoms"]
+        payload = {
+            "score_field": field,
+            "direction": "higher_is_better" if higher else "lower_is_better",
+            "direction_assumed": result.direction_assumed,
+            "n_poses": len(poses),
+            "n_ranked": len(result.rows),
+            "n_missing": result.n_missing,
+            "with_smiles": result.with_smiles,
+            "rows": result.rows[:_MAX_ROWS],
+        }
+        if len(result.rows) > _MAX_ROWS:
+            payload["rows_truncated"] = len(result.rows) - _MAX_ROWS
+        if save_dir:
+            out = os.path.abspath(os.path.expanduser(save_dir))
+            os.makedirs(out, exist_ok=True)
+            summary_csv = os.path.join(out, "dock_summary.csv")
+            top_csv = os.path.join(out, "top_hits.csv")
+            docking.write_rows_csv(summary_csv, columns, result.rows)
+            docking.write_rows_csv(top_csv, columns, result.rows[: max(0, top)])
+            written = [summary_csv, top_csv]
+            fig = os.path.join(out, "score_distribution.png")
+            if docking.plot_score_distribution(result.scores, field, fig):
+                written.append(fig)
+            payload["written"] = written
+        return json.dumps(payload, indent=2, default=_jsonable)
+
+    @server.tool(title="Select diverse docking hits", annotations=WRITE_LOCAL)
+    @_friendly_errors
+    def dock_diverse(
+        source: str, score_field: Optional[str] = None, top: int = 500,
+        select: int = 50, threshold: float = 0.7,
+        higher_is_better: Optional[bool] = None, save_dir: Optional[str] = None,
+    ) -> str:
+        """Pick a chemically diverse subset of the top docking hits.
+
+        Ranks the poses in ``source`` (a docking ``.sdf``), keeps the best
+        ``top``, clusters them by Tanimoto similarity (Morgan fingerprints, Butina
+        at similarity ``threshold``) and returns the best-scoring representative of
+        each cluster, up to ``select`` — so a shortlist is not many near-identical
+        analogues. Needs RDKit. Reports when fewer clusters exist than requested.
+        Pass ``save_dir`` to also write ``diverse_hits.sdf`` and
+        ``diverse_hits.csv``.
+        """
+        from . import docking
+
+        poses = docking.read_poses(_dock_path(source))
+        field = docking.resolve_score_field(poses, score_field)
+        higher = (
+            docking.higher_is_better(field)[0]
+            if higher_is_better is None else higher_is_better
+        )
+        result = docking.select_diverse_hits(
+            poses, field, higher_is_better_flag=higher,
+            top=top, select=select, threshold=threshold,
+        )
+        columns = ["rank", "pose_id", "name", "smiles", "score",
+                   "cluster_id", "cluster_size"]
+        rows = [{k: rep[k] for k in columns} for rep in result.selected]
+        payload = {
+            "score_field": field,
+            "n_pool": result.n_pool,
+            "n_clusters": result.n_clusters,
+            "requested": result.requested,
+            "threshold": result.threshold,
+            "capped_below_request": result.capped_below_request,
+            "selected": rows,
+        }
+        if save_dir:
+            out = os.path.abspath(os.path.expanduser(save_dir))
+            os.makedirs(out, exist_ok=True)
+            csv_path = os.path.join(out, "diverse_hits.csv")
+            sdf_path = os.path.join(out, "diverse_hits.sdf")
+            docking.write_rows_csv(csv_path, columns, rows)
+            docking.write_poses_sdf([rep["pose"] for rep in result.selected], sdf_path)
+            payload["written"] = [csv_path, sdf_path]
+        return json.dumps(payload, indent=2, default=_jsonable)
+
+    @server.tool(title="Consensus-rank docking hits", annotations=WRITE_LOCAL)
+    @_friendly_errors
+    def dock_rank(
+        sources: list[str], score_fields: Optional[list[str]] = None,
+        key: str = "name", higher_is_better: Optional[list[str]] = None,
+        lower_is_better: Optional[list[str]] = None, mw_max: Optional[float] = None,
+        logp_max: Optional[float] = None, save_path: Optional[str] = None,
+    ) -> str:
+        """Consensus-rank hits across one or more scored docking SDFs.
+
+        ``sources`` is a list of docking ``.sdf`` paths (e.g. a Vina and a Gnina
+        scoring of the same library). Molecules are joined across files by ``key``
+        (``"name"`` or ``"smiles"``; smiles needs RDKit), each score field is
+        ranked by its own direction, and the consensus is the mean rank across
+        fields. ``score_fields`` selects fields (known docking fields are
+        auto-detected otherwise). ``higher_is_better``/``lower_is_better`` are
+        lists of field names overriding the inferred direction; ``mw_max`` /
+        ``logp_max`` drop hits outside a property window (need RDKit). The result
+        reports which fields and directions were used; the consensus rank is a
+        transparent triage heuristic, not a calibrated affinity.
+        """
+        from . import docking
+
+        pose_sets = [
+            (docking._stem(s), docking.read_poses(_dock_path(s))) for s in sources
+        ]
+        result = docking.consensus_rank(
+            pose_sets, score_fields=score_fields, key=key,
+            higher=set(higher_is_better) if higher_is_better else None,
+            lower=set(lower_is_better) if lower_is_better else None,
+            mw_max=mw_max, logp_max=logp_max,
+        )
+        payload = {
+            "key": result.key,
+            "method": "consensus (mean rank across score fields)",
+            "score_columns": result.score_columns,
+            "directions": {
+                col: ("higher_is_better" if hib else "lower_is_better")
+                for col, hib in result.directions.items()
+            },
+            "assumed_direction": result.assumed,
+            "n_dropped_filter": result.n_dropped_filter,
+            "n_molecules": len(result.rows),
+            "note": ("consensus rank is the mean rank across the listed fields, a "
+                     "transparent triage heuristic, not a calibrated affinity"),
+            "rows": result.rows[:_MAX_ROWS],
+        }
+        if len(result.rows) > _MAX_ROWS:
+            payload["rows_truncated"] = len(result.rows) - _MAX_ROWS
+        if save_path:
+            path = os.path.abspath(os.path.expanduser(save_path))
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            docking.write_rows_csv(path, result.columns, result.rows)
+            payload["written"] = [path]
+        return json.dumps(payload, indent=2, default=_jsonable)
+
+    @server.tool(title="Build docking HTML report", annotations=WRITE_LOCAL)
+    @_friendly_errors
+    def dock_report(
+        source: str, save_dir: str, score_field: Optional[str] = None,
+        top: int = 50, select: int = 20, threshold: float = 0.7,
+        export_poses: int = 20, clusters: bool = True,
+        higher_is_better: Optional[bool] = None,
+    ) -> str:
+        """Write a self-contained HTML triage report for a docking run.
+
+        Builds ``dock_report.html`` in ``save_dir`` (a ranked hit table, an
+        embedded score histogram and, when RDKit is available and ``clusters`` is
+        true, a grid of diverse cluster representatives drawn in 2D) plus
+        ``top_poses.sdf`` holding the best ``export_poses`` poses for loading into
+        PyMOL, ChimeraX or Mol*. ``source`` is a docking ``.sdf``. Unlike the other
+        docking tools this always writes files, so ``save_dir`` is required.
+        Returns the written paths and a short summary.
+        """
+        from . import docking
+
+        poses = docking.read_poses(_dock_path(source))
+        field = docking.resolve_score_field(poses, score_field)
+        higher, assumed = (
+            docking.higher_is_better(field) if higher_is_better is None
+            else (higher_is_better, False)
+        )
+        summary = docking.summarize(
+            poses, field, higher_is_better_flag=higher, direction_assumed=assumed,
+        )
+        diverse = None
+        cluster_note = None
+        if clusters:
+            try:
+                diverse = docking.select_diverse_hits(
+                    poses, field, higher_is_better_flag=higher,
+                    top=max(500, top), select=select, threshold=threshold,
+                )
+            except (ImportError, ValueError) as exc:
+                cluster_note = f"clustering skipped: {exc}"
+        out = os.path.abspath(os.path.expanduser(save_dir))
+        os.makedirs(out, exist_ok=True)
+        by_id = {p.index: p for p in poses}
+        top_poses = [by_id[r["pose_id"]] for r in summary.rows[: max(0, export_poses)]]
+        poses_name = "top_poses.sdf"
+        if top_poses:
+            docking.write_poses_sdf(top_poses, os.path.join(out, poses_name))
+        html = docking.render_html_report(
+            summary, source_name=os.path.basename(source), n_poses=len(poses),
+            diverse=diverse, table_rows=top,
+            poses_file=poses_name if top_poses else None,
+        )
+        report_path = os.path.join(out, "dock_report.html")
+        with open(report_path, "w") as handle:
+            handle.write(html)
+        written = [report_path]
+        if top_poses:
+            written.append(os.path.join(out, poses_name))
+        payload = {
+            "score_field": field,
+            "n_poses": len(poses),
+            "n_ranked": len(summary.rows),
+            "n_clusters": diverse.n_clusters if diverse is not None else None,
+            "written": written,
+        }
+        if cluster_note:
+            payload["cluster_note"] = cluster_note
+        return json.dumps(payload, indent=2, default=_jsonable)
 
     @server.tool(title="Render structure", annotations=WRITE_NET)
     @_friendly_errors

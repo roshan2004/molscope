@@ -764,12 +764,8 @@ def _run_export(args: argparse.Namespace) -> int:
 
 
 def _write_csv_rows(path: str, columns: list[str], rows: list[dict]) -> None:
-    import csv
-    with open(path, "w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({c: row.get(c, "") for c in columns})
+    from .docking import write_rows_csv
+    write_rows_csv(path, columns, rows)
 
 
 def _run_dock_summary(args: argparse.Namespace) -> int:

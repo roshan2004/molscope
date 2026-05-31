@@ -125,8 +125,9 @@ molscope dock-diverse vina_out.sdf --top 500 --select 50
 
 MolScope ships an optional [Model Context Protocol](https://modelcontextprotocol.io)
 server, so an assistant such as Claude Code or Claude Desktop can drive its
-analyses in natural language. It exposes the public API as 23 tools (structure
-analysis, graphs, plots, dataset prep) and adds no new science.
+analyses in natural language. It exposes the public API as 27 tools (structure
+analysis, graphs, plots, dataset prep, docking-hit triage) and adds no new
+science.
 
 ```bash
 pip install "molscope[mcp]"              # needs Python >= 3.10

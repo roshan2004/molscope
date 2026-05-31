@@ -11,6 +11,11 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- MCP server now exposes the docking-hit triage workflow as four tools
+  (``dock_summary``, ``dock_diverse``, ``dock_rank``, ``dock_report``), so an AI
+  assistant can rank poses, pick a diverse shortlist, consensus-rank across scored
+  SDFs, and build an HTML report from a docking-output SDF. They take a literal
+  SDF path and write files only when given an output directory (27 tools total).
 - Docking-hit triage commands for making sense of a virtual screen's output SDF,
   exposed both on the CLI and as functions in ``molscope.docking``:
   - ``molscope dock-summary results.sdf --score-field minimizedAffinity``: rank

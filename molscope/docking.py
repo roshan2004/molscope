@@ -382,6 +382,17 @@ def write_poses_sdf(poses, path: str) -> None:
             f.write(block + "\n$$$$\n")
 
 
+def write_rows_csv(path: str, columns: list[str], rows: list[dict]) -> None:
+    """Write ``rows`` (list of dicts) to ``path`` as CSV with ``columns`` order."""
+    import csv
+
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({c: row.get(c, "") for c in columns})
+
+
 # -- feature 3: consensus ranking -------------------------------------------
 
 @dataclass

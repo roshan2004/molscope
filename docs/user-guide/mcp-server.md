@@ -109,6 +109,20 @@ RMSD against experiment).
 | `select_diverse` | `table`, `n`, `descriptor_cols` / `smiles_col` + `compute_descriptors` | Diverse subset of a CSV/XLSX molecule table (MaxMin). |
 | `validate_cif` | `source` | mmCIF validation report (`cif` extra for full checks). |
 
+### Docking-hit triage
+
+These tools read a docking-output `.sdf` (one record per pose, as written by
+AutoDock Vina, Gnina or Smina). Here `source` is a literal SDF path, not a PDB id
+or SMILES. They return JSON; pass `save_dir` / `save_path` to also write files.
+See [Docking-hit triage](docking-triage.md) for the workflow.
+
+| Tool | Arguments | Returns |
+| --- | --- | --- |
+| `dock_summary` | `source`, `score_field`, `top`, `higher_is_better`, `save_dir` | Ranked hits with score, ligand efficiency, SMILES; optional CSVs + histogram. |
+| `dock_diverse` | `source`, `score_field`, `top`, `select`, `threshold`, `save_dir` | Diverse cluster representatives (Tanimoto/Butina); optional SDF + CSV. Needs RDKit. |
+| `dock_rank` | `sources` (list), `score_fields`, `key`, `mw_max`, `logp_max`, `save_path` | Mean-rank consensus across scored SDFs, with the fields and directions used. |
+| `dock_report` | `source`, `save_dir`, `top`, `select`, `export_poses` | Writes a self-contained `dock_report.html` + `top_poses.sdf`. |
+
 ### Plots
 
 | Tool | Arguments | Returns |
@@ -134,9 +148,11 @@ values (e.g. undefined torsion angles) are emitted as JSON `null`.
 
 ## Scope
 
-The server intentionally wraps only existing read-only analyses. It does not
-write files, mutate structures, or add capabilities beyond the library, and it
-inherits every limitation documented in
+The server intentionally wraps only existing library functions. Most tools are
+read-only; a few write files **only when you pass an output path** (`save_path`
+on the plot tools, `save_dir` on `prepare_dataset` and the docking tools, which
+`dock_report` always uses). It never mutates structures or adds capabilities
+beyond the library, and it inherits every limitation documented in
 [Limitations by workflow](../limitations.md). For scripted or batch use, prefer
 the Python API or the `molscope` command-line interface; the MCP server is for
 interactive, assistant-driven exploration.
