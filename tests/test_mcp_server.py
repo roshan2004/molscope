@@ -554,12 +554,22 @@ def test_main_runs_server(monkeypatch):
 # -- docking tools ----------------------------------------------------------
 
 def test_dock_summary_ranks_and_autodetects(server):
-    out = _json(server, "dock_summary", source=DOCK_SDF, with_smiles=False)
+    out = _json(
+        server, "dock_summary", source=DOCK_SDF, with_smiles=False, best_pose_per_ligand=False,
+    )
     assert out["score_field"] == "minimizedAffinity"
     assert out["direction"] == "lower_is_better"
     assert out["n_poses"] == 3
     assert [r["name"] for r in out["rows"]] == ["ligA_pose1", "ligB_pose1", "ligA_pose2"]
     assert out["rows"][0]["rank"] == 1
+
+
+def test_dock_summary_best_pose_per_ligand(server):
+    # Default is best_pose_per_ligand=True: the two ligA poses collapse to one.
+    out = _json(server, "dock_summary", source=DOCK_SDF, with_smiles=False)
+    assert out["n_poses"] == 3                       # total poses read (unchanged)
+    assert out["n_ranked"] == 2                       # one row per compound after collapse
+    assert [r["name"] for r in out["rows"]] == ["ligA_pose1", "ligB_pose1"]
 
 
 def test_dock_summary_writes_files(server, tmp_path):

@@ -445,3 +445,54 @@ def test_render_report_shows_no_depiction_placeholder_without_rdkit(monkeypatch,
         summary, source_name="vina.sdf", n_poses=len(poses), diverse=diverse,
     )
     assert "no depiction" in html
+
+
+def test_pose_stream_is_reusable():
+    poses_stream = docking.PoseStream(POSES_SDF)
+    first_pass = list(poses_stream)
+    second_pass = list(poses_stream)
+
+    assert len(first_pass) == 3
+    assert len(second_pass) == 3
+    assert first_pass[0].name == second_pass[0].name
+
+
+def test_summarize_best_pose_per_ligand():
+    poses = list(docking.PoseStream(POSES_SDF))
+    result = docking.summarize(
+        poses, "minimizedAffinity", higher_is_better_flag=False,
+        with_smiles=False, best_pose_per_ligand=True,
+    )
+    assert len(result.rows) == 2
+    assert [r["name"] for r in result.rows] == ["ligA_pose1", "ligB_pose1"]
+    assert result.rows[0]["rank"] == 1
+    assert result.rows[1]["rank"] == 2
+
+
+def test_select_diverse_hits_surfaces_failed_fingerprints(tmp_path):
+    pytest.importorskip("rdkit")
+    messy_sdf = tmp_path / "messy.sdf"
+    # One good molecule, one bad molecule (overvalent Carbon with 5 bonds will fail valency check)
+    messy_sdf.write_text(
+        "good\n p\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n>  <score>\n-5.0\n\n$$$$\n"
+        "bad\n p\n\n  2  5  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "    1.0000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "  1  2  1  0\n"
+        "  1  2  1  0\n"
+        "  1  2  1  0\n"
+        "  1  2  1  0\n"
+        "  1  2  1  0\n"
+        "M  END\n>  <score>\n-6.0\n\n$$$$\n"
+    )
+    poses = list(docking.PoseStream(str(messy_sdf)))
+    # We want to select 1 diverse hit from the top 2
+    result = docking.select_diverse_hits(
+        poses, "score", higher_is_better_flag=False,
+        top=2, select=1, threshold=0.5,
+    )
+    assert result.n_failed_fp == 1
+    assert result.n_pool == 1  # 1 valid pose after fingerprinting
+

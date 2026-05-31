@@ -232,7 +232,15 @@ def main(argv=None) -> int:
     dock_summary_parser.add_argument(
         "--no-figure", dest="figure", action="store_false", help="skip score_distribution.png",
     )
-    dock_summary_parser.set_defaults(higher=None, smiles=True, figure=True)
+    dock_summary_parser.add_argument(
+        "--best-pose-per-ligand", dest="best_pose", action="store_true",
+        help="collapse multiple poses of the same compound to the single best pose (default)",
+    )
+    dock_summary_parser.add_argument(
+        "--no-best-pose-per-ligand", dest="best_pose", action="store_false",
+        help="keep all poses for each compound",
+    )
+    dock_summary_parser.set_defaults(higher=None, smiles=True, figure=True, best_pose=True)
 
     # -- DOCK-DIVERSE subcommand -------------------------------------------
     dock_diverse_parser = subparsers.add_parser(
@@ -328,7 +336,15 @@ def main(argv=None) -> int:
     rdir = dock_report_parser.add_mutually_exclusive_group()
     rdir.add_argument("--higher-is-better", dest="higher", action="store_true")
     rdir.add_argument("--lower-is-better", dest="higher", action="store_false")
-    dock_report_parser.set_defaults(higher=None, clusters=True)
+    dock_report_parser.add_argument(
+        "--best-pose-per-ligand", dest="best_pose", action="store_true",
+        help="collapse multiple poses of the same compound to the single best pose (default)",
+    )
+    dock_report_parser.add_argument(
+        "--no-best-pose-per-ligand", dest="best_pose", action="store_false",
+        help="keep all poses for each compound",
+    )
+    dock_report_parser.set_defaults(higher=None, clusters=True, best_pose=True)
 
     # Default to 'view' if no subcommand provided
     if argv is None:
@@ -772,7 +788,7 @@ def _run_dock_summary(args: argparse.Namespace) -> int:
     from . import docking
 
     try:
-        poses = docking.read_poses(args.file)
+        poses = docking.PoseStream(args.file)
         score_field = docking.resolve_score_field(poses, args.score_field)
     except (OSError, ValueError) as exc:
         print(f"dock-summary failed: {exc}", file=sys.stderr)
@@ -786,6 +802,7 @@ def _run_dock_summary(args: argparse.Namespace) -> int:
     result = docking.summarize(
         poses, score_field, higher_is_better_flag=higher,
         direction_assumed=assumed_dir, with_smiles=args.smiles,
+        best_pose_per_ligand=args.best_pose,
     )
     if not result.rows:
         print(
@@ -825,7 +842,7 @@ def _run_dock_diverse(args: argparse.Namespace) -> int:
     from . import docking
 
     try:
-        poses = docking.read_poses(args.file)
+        poses = docking.PoseStream(args.file)
         score_field = docking.resolve_score_field(poses, args.score_field)
     except (OSError, ValueError) as exc:
         print(f"dock-diverse failed: {exc}", file=sys.stderr)
@@ -857,6 +874,8 @@ def _run_dock_diverse(args: argparse.Namespace) -> int:
         f"clustered {result.n_pool} hits into {result.n_clusters} cluster(s) "
         f"at Tanimoto similarity {result.threshold:g}"
     )
+    if result.n_failed_fp:
+        print(f"failed to generate fingerprints for {result.n_failed_fp} pose(s) (dropped)")
     if result.capped_below_request:
         print(
             f"only {result.n_clusters} diverse cluster(s) exist, fewer than the "
@@ -873,7 +892,7 @@ def _run_dock_rank(args: argparse.Namespace) -> int:
     pose_sets = []
     try:
         for path in args.files:
-            pose_sets.append((docking._stem(path), docking.read_poses(path)))
+            pose_sets.append((docking._stem(path), docking.PoseStream(path)))
         result = docking.consensus_rank(
             pose_sets,
             score_fields=args.score_fields,
@@ -912,7 +931,7 @@ def _run_dock_report(args: argparse.Namespace) -> int:
     from . import docking
 
     try:
-        poses = docking.read_poses(args.file)
+        poses = docking.PoseStream(args.file)
         score_field = docking.resolve_score_field(poses, args.score_field)
     except (OSError, ValueError) as exc:
         print(f"dock-report failed: {exc}", file=sys.stderr)
@@ -925,6 +944,7 @@ def _run_dock_report(args: argparse.Namespace) -> int:
 
     summary = docking.summarize(
         poses, score_field, higher_is_better_flag=higher, direction_assumed=assumed_dir,
+        best_pose_per_ligand=args.best_pose,
     )
     if not summary.rows:
         print(f"no poses had a numeric {score_field!r} value", file=sys.stderr)
@@ -946,13 +966,13 @@ def _run_dock_report(args: argparse.Namespace) -> int:
 
     # Top poses for external 3D viewers: re-emit the best records as one SDF.
     poses_name = "top_poses.sdf"
-    by_id = {p.index: p for p in poses}
-    top_poses = [by_id[r["pose_id"]] for r in summary.rows[: max(0, args.export_poses)]]
+    ranked_ids = [r["pose_id"] for r in summary.rows[: max(0, args.export_poses)]]
+    top_poses = docking.collect_poses(poses, ranked_ids)
     if top_poses:
         docking.write_poses_sdf(top_poses, os.path.join(args.out_dir, poses_name))
 
     html = docking.render_html_report(
-        summary, source_name=os.path.basename(args.file), n_poses=len(poses),
+        summary, source_name=os.path.basename(args.file), n_poses=summary.n_poses,
         diverse=diverse, table_rows=args.top,
         poses_file=poses_name if top_poses else None,
     )
@@ -963,6 +983,8 @@ def _run_dock_report(args: argparse.Namespace) -> int:
     print(f"ranked {len(summary.rows)} poses by {score_field!r}")
     if diverse is not None:
         print(f"clustered into {diverse.n_clusters} group(s); showed {len(diverse.selected)}")
+        if diverse.n_failed_fp:
+            print(f"failed to generate fingerprints for {diverse.n_failed_fp} pose(s) (dropped)")
     if top_poses:
         print(f"wrote {len(top_poses)} top pose(s) to {poses_name} for PyMOL/ChimeraX/Mol*")
     print(f"wrote {report_path}")

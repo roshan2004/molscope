@@ -492,6 +492,43 @@ def read_sdf(path: str) -> Molecule:
     return mol
 
 
+def stream_sdf_frames(path: str) -> Generator[Molecule, None, None]:
+    """Yield every record of a multi-record ``.sdf`` as a molecule, line by line.
+
+    Keeps the memory footprint O(1) with respect to the number of records.
+    """
+    stem = _stem(path)
+    record_no = 0
+    with _open(path) as f:
+        current_lines = []
+        for line in f:
+            if line.rstrip() == "$$$$":
+                if current_lines:
+                    record_no += 1
+                    try:
+                        mol, _ = _parse_sdf_record(
+                            current_lines, 0, path, f"{stem}#{record_no}", record_no=record_no
+                        )
+                        yield mol
+                    except ValueError:
+                        pass
+                    current_lines = []
+            elif line.strip() or current_lines:
+                # Skip blank padding *between* records (a blank line before a
+                # record's title), but keep blanks once a block has started
+                # (the comment line, line 3 of a V2000 record, is often blank).
+                current_lines.append(line)
+        if any(ln.strip() for ln in current_lines):
+            record_no += 1
+            try:
+                mol, _ = _parse_sdf_record(
+                    current_lines, 0, path, f"{stem}#{record_no}", record_no=record_no
+                )
+                yield mol
+            except ValueError:
+                pass
+
+
 def read_sdf_frames(path: str) -> list[Molecule]:
     """Read every record of a multi-record ``.sdf`` as a list of molecules.
 
@@ -506,31 +543,7 @@ def read_sdf_frames(path: str) -> list[Molecule]:
     Records that fail to parse are skipped rather than aborting the whole file;
     an all-empty file raises :class:`ValueError`.
     """
-    with _open(path) as f:
-        lines = f.readlines()
-    stem = _stem(path)
-    frames: list[Molecule] = []
-    i, n_lines, record_no = 0, len(lines), 0
-    while i < n_lines:
-        # Skip blank padding between records (some writers add trailing newlines).
-        if not lines[i].strip():
-            i += 1
-            continue
-        record_no += 1
-        try:
-            mol, nxt = _parse_sdf_record(
-                lines, i, path, f"{stem}#{record_no}", record_no=record_no
-            )
-        except ValueError:
-            # Resynchronise on the next record boundary and drop this one.
-            nxt = i + 1
-            while nxt < n_lines and lines[nxt].rstrip() != "$$$$":
-                nxt += 1
-            nxt += 1
-            i = nxt
-            continue
-        frames.append(mol)
-        i = nxt
+    frames = list(stream_sdf_frames(path))
     if not frames:
         raise _parse_error(path, "SDF", "no readable records in file")
     return frames
@@ -1075,7 +1088,7 @@ def _pdb_atom_line(
 def stream(path: str, altloc: str = "primary") -> Generator[Molecule, None, None]:
     """Yield frames/models one by one, picking the stream parser from the file extension.
 
-    Transparently handles gzip-compressed files (``.pdb.gz``, ``.xyz.gz``).
+    Transparently handles gzip-compressed files (``.pdb.gz``, ``.xyz.gz``, ``.sdf.gz``).
     """
     path = os.fspath(path)
     ext = _data_extension(path)
@@ -1083,8 +1096,12 @@ def stream(path: str, altloc: str = "primary") -> Generator[Molecule, None, None
         yield from stream_pdb_models(path, altloc=altloc)
     elif ext == ".xyz":
         yield from stream_xyz_frames(path)
+    elif ext == ".sdf":
+        yield from stream_sdf_frames(path)
     else:
-        raise ValueError(f"Streaming is not supported for file type {ext!r}; expected .pdb/.xyz")
+        raise ValueError(
+            f"Streaming is not supported for file type {ext!r}; expected .pdb/.xyz/.sdf"
+        )
 
 
 def stream_xyz_frames(path: str) -> Generator[Molecule, None, None]:

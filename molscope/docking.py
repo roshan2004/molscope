@@ -20,6 +20,9 @@ directions it used. Treat it as a triage heuristic, not ground truth.
 from __future__ import annotations
 
 import math
+import os
+import re
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 from typing import Optional
 
@@ -69,52 +72,75 @@ class Pose:
         return sum(1 for e in self.molecule.elements if e and e.upper() != "H")
 
 
+def stream_poses(path: str) -> Generator[Pose, None, None]:
+    """Yield every record of an SDF into :class:`Pose` objects (raw block kept).
+
+    Malformed records are skipped rather than aborting the whole file.
+    """
+    stem = _stem(path)
+    record = [0]
+
+    def _emit(lines):
+        record[0] += 1
+        try:
+            mol, _ = _parse_sdf_record(
+                lines, 0, path, f"{stem}#{record[0]}", record_no=record[0]
+            )
+        except ValueError:
+            return None
+        return Pose(
+            index=record[0], name=mol.name, molecule=mol,
+            block="".join(lines).rstrip("\n"), source=stem,
+        )
+
+    with _open(path) as f:
+        current_lines = []
+        for line in f:
+            if line.rstrip() == "$$$$":
+                if current_lines:
+                    pose = _emit(current_lines)
+                    if pose is not None:
+                        yield pose
+                    current_lines = []
+            elif line.strip() or current_lines:
+                # Skip blank padding before a record's title; keep blanks once a
+                # block has started (a V2000 comment line is often blank).
+                current_lines.append(line)
+        if any(ln.strip() for ln in current_lines):
+            pose = _emit(current_lines)
+            if pose is not None:
+                yield pose
+
+
+class PoseStream:
+    """A reusable stream of docking poses that reads from disk on iteration.
+
+    This avoids loading all poses into memory, keeping the memory footprint O(1)
+    with respect to the number of poses in the file.
+    """
+
+    def __init__(self, path: str):
+        self.path = os.fspath(path)
+
+    def __iter__(self) -> Generator[Pose, None, None]:
+        return stream_poses(self.path)
+
+
 def read_poses(path: str) -> list[Pose]:
     """Read every record of an SDF into :class:`Pose` objects (raw block kept).
 
     Malformed records are skipped rather than aborting the whole file. Raises
     :class:`ValueError` if no record could be read.
     """
-    with _open(path) as f:
-        text = f.read()
-    stem = _stem(path)
-    poses: list[Pose] = []
-    for raw in _split_records(text):
-        if not raw.strip():
-            continue
-        lines = raw.splitlines(keepends=True)
-        try:
-            mol, _ = _parse_sdf_record(
-                lines, 0, path, f"{stem}#{len(poses) + 1}", record_no=len(poses) + 1
-            )
-        except ValueError:
-            continue
-        poses.append(
-            Pose(index=len(poses) + 1, name=mol.name, molecule=mol,
-                 block=raw.rstrip("\n"), source=stem)
-        )
+    poses = list(stream_poses(path))
     if not poses:
         raise ValueError(f"{path}: no readable records in SDF")
     return poses
 
 
-def _split_records(text: str) -> list[str]:
-    """Split SDF text into per-record blocks on the ``$$$$`` terminator lines."""
-    records, current = [], []
-    for line in text.splitlines(keepends=True):
-        if line.rstrip() == "$$$$":
-            records.append("".join(current))
-            current = []
-        else:
-            current.append(line)
-    if any(ln.strip() for ln in current):
-        records.append("".join(current))   # trailing record with no terminator
-    return records
-
-
 # -- score-field discovery --------------------------------------------------
 
-def available_fields(poses: list[Pose]) -> list[str]:
+def available_fields(poses: Iterable[Pose]) -> list[str]:
     """Union of all data-field names present across the poses, first-seen order."""
     seen: dict[str, None] = {}
     for pose in poses:
@@ -123,7 +149,7 @@ def available_fields(poses: list[Pose]) -> list[str]:
     return list(seen)
 
 
-def resolve_score_field(poses: list[Pose], field_name: Optional[str]) -> str:
+def resolve_score_field(poses: Iterable[Pose], field_name: Optional[str]) -> str:
     """Return the score field to use, auto-detecting a known one if not given.
 
     Raises a helpful :class:`ValueError` listing the available fields when the
@@ -182,15 +208,17 @@ class SummaryResult:
     scores: np.ndarray               # finite scores in ranked order, for plotting
     n_missing: int                   # poses dropped for a missing/non-numeric score
     with_smiles: bool
+    n_poses: int = 0                 # total poses read (before any best-pose collapse)
 
 
 def summarize(
-    poses: list[Pose],
+    poses: Iterable[Pose],
     score_field: str,
     *,
     higher_is_better_flag: bool,
     direction_assumed: bool = False,
     with_smiles: bool = True,
+    best_pose_per_ligand: bool = False,
 ) -> SummaryResult:
     """Rank poses by ``score_field`` and build summary rows.
 
@@ -215,6 +243,11 @@ def summarize(
             "ligand_efficiency": _ligand_efficiency(value, heavy, higher_is_better_flag),
         })
     rows.sort(key=lambda r: r["score"], reverse=higher_is_better_flag)
+    n_poses = len(rows) + missing                # total read, before any collapse
+
+    if best_pose_per_ligand:
+        rows = _keep_best_pose_per_ligand(rows)
+
     for rank, row in enumerate(rows, start=1):
         row["rank"] = rank
     ordered = ["rank", "pose_id", "name", "smiles", "score",
@@ -224,8 +257,31 @@ def summarize(
         rows=rows, score_field=score_field, higher_is_better=higher_is_better_flag,
         direction_assumed=direction_assumed,
         scores=np.array([r["score"] for r in rows], dtype=float),
-        n_missing=missing, with_smiles=smiles_fn is not None,
+        n_missing=missing, with_smiles=smiles_fn is not None, n_poses=n_poses,
     )
+
+
+# Explicit pose-suffix conventions used by docking tools (e.g. "lig_pose1").
+# Deliberately conservative: only strip clear pose markers, never a generic
+# trailing number, so a real name like "NAD-2" is not mangled. Many engines
+# (Gnina, Smina) instead repeat the exact ligand name across poses, which this
+# collapses naturally without any suffix stripping.
+_POSE_SUFFIX = re.compile(r"(_pose\d+|_conf\d+|_model\d+|_raw)$", re.IGNORECASE)
+
+
+def _keep_best_pose_per_ligand(rows: list[dict]) -> list[dict]:
+    """Keep one row per compound (the first, i.e. best after sorting).
+
+    Compounds are keyed by SMILES when available (robust), else by name with any
+    explicit pose suffix removed.
+    """
+    kept, seen = [], set()
+    for row in rows:
+        key = row["smiles"] or _POSE_SUFFIX.sub("", row["name"] or "")
+        if key not in seen:
+            seen.add(key)
+            kept.append(row)
+    return kept
 
 
 def _draw_histogram(scores: np.ndarray, score_field: str):
@@ -283,10 +339,9 @@ class DiverseResult:
     threshold: float                 # Tanimoto similarity cutoff used
     score_field: str
     capped_below_request: bool       # True when fewer clusters than requested
-
-
+    n_failed_fp: int = 0             # Number of poses where fingerprint perception failed
 def select_diverse_hits(
-    poses: list[Pose],
+    poses: Iterable[Pose],
     score_field: str,
     *,
     higher_is_better_flag: bool,
@@ -313,11 +368,29 @@ def select_diverse_hits(
     from rdkit.Chem import rdFingerprintGenerator
     from rdkit.ML.Cluster import Butina
 
-    ranked = [p for p in poses if not math.isnan(p.score(score_field))]
-    ranked.sort(key=lambda p: p.score(score_field), reverse=higher_is_better_flag)
-    pool = ranked[: top if top and top > 0 else len(ranked)]
-    if not pool:
+    # First pass: gather scores, indices, and names of valid poses
+    candidates = []
+    for pose in poses:
+        val = pose.score(score_field)
+        if not math.isnan(val):
+            candidates.append((val, pose.index, pose.name))
+
+    if not candidates:
         raise ValueError(f"no poses with a numeric {score_field!r} score to select from")
+
+    candidates.sort(key=lambda x: x[0], reverse=higher_is_better_flag)
+    top_candidates = candidates[: top if top and top > 0 else len(candidates)]
+    top_indices = {c[1] for c in top_candidates}
+
+    # Second pass: gather full Pose objects for the top candidates
+    pool_unordered = []
+    for pose in poses:
+        if pose.index in top_indices:
+            pool_unordered.append(pose)
+
+    # Sort the gathered Pose objects to match the top_candidates ranking order
+    pool_by_id = {p.index: p for p in pool_unordered}
+    pool = [pool_by_id[idx] for _, idx, _ in top_candidates if idx in pool_by_id]
 
     gen = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=n_bits)
     fps, valid = [], []
@@ -366,11 +439,15 @@ def select_diverse_hits(
     chosen = reps[:select] if select and select > 0 else reps
     for rank, rep in enumerate(chosen, start=1):
         rep["row"] = {"rank": rank, **rep["row"]}
+
+    n_failed_fp = len(pool) - len(valid)
+
     return DiverseResult(
         selected=[{"pose": r["pose"], **r["row"]} for r in chosen],
         n_pool=len(valid), n_clusters=n_clusters, requested=select,
         threshold=threshold, score_field=score_field,
         capped_below_request=n_clusters < select,
+        n_failed_fp=n_failed_fp,
     )
 
 
@@ -380,6 +457,17 @@ def write_poses_sdf(poses, path: str) -> None:
         for pose in poses:
             block = pose.block.rstrip("\n")
             f.write(block + "\n$$$$\n")
+
+
+def collect_poses(poses: Iterable[Pose], ranked_ids: list[int]) -> list[Pose]:
+    """Gather the poses for ``ranked_ids`` (pose indices), preserving that order.
+
+    Streams ``poses`` once, keeping only the requested ids in memory -- so this
+    stays O(len(ranked_ids)) even when ``poses`` is a whole-file :class:`PoseStream`.
+    """
+    wanted = set(ranked_ids)
+    by_id = {p.index: p for p in poses if p.index in wanted}
+    return [by_id[i] for i in ranked_ids if i in by_id]
 
 
 def write_rows_csv(path: str, columns: list[str], rows: list[dict]) -> None:
@@ -407,7 +495,7 @@ class ConsensusResult:
 
 
 def consensus_rank(
-    pose_sets: list[tuple[str, list[Pose]]],
+    pose_sets: list[tuple[str, Iterable[Pose]]],
     *,
     score_fields: Optional[list[str]] = None,
     key: str = "name",
@@ -436,7 +524,8 @@ def consensus_rank(
             if row_key is None:
                 continue
             entry = joined.setdefault(row_key, {"key": row_key})
-            representative.setdefault(row_key, pose)
+            if mw_max is not None or logp_max is not None:
+                representative.setdefault(row_key, pose)
             for fname in fields:
                 value = pose.score(fname)
                 if math.isnan(value):
@@ -493,7 +582,7 @@ def consensus_rank(
     )
 
 
-def _detect_fields(poses: list[Pose]) -> list[str]:
+def _detect_fields(poses: Iterable[Pose]) -> list[str]:
     """Known docking score fields present across the poses, in first-seen order."""
     fields = available_fields(poses)
     lower = {f.lower(): f for f in fields}

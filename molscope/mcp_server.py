@@ -776,6 +776,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
     def dock_summary(
         source: str, score_field: Optional[str] = None, top: int = 10,
         higher_is_better: Optional[bool] = None, with_smiles: bool = True,
+        best_pose_per_ligand: bool = True,
         save_dir: Optional[str] = None,
     ) -> str:
         """Rank docking poses from an output SDF and summarise the hits.
@@ -791,7 +792,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         """
         from . import docking
 
-        poses = docking.read_poses(_dock_path(source))
+        poses = docking.PoseStream(_dock_path(source))
         field = docking.resolve_score_field(poses, score_field)
         higher, assumed = (
             docking.higher_is_better(field) if higher_is_better is None
@@ -800,6 +801,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         result = docking.summarize(
             poses, field, higher_is_better_flag=higher,
             direction_assumed=assumed, with_smiles=with_smiles,
+            best_pose_per_ligand=best_pose_per_ligand,
         )
         columns = ["rank", "pose_id", "name", "smiles", "score",
                    "ligand_efficiency", "n_heavy_atoms"]
@@ -807,7 +809,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             "score_field": field,
             "direction": "higher_is_better" if higher else "lower_is_better",
             "direction_assumed": result.direction_assumed,
-            "n_poses": len(poses),
+            "n_poses": result.n_poses,
             "n_ranked": len(result.rows),
             "n_missing": result.n_missing,
             "with_smiles": result.with_smiles,
@@ -848,7 +850,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         """
         from . import docking
 
-        poses = docking.read_poses(_dock_path(source))
+        poses = docking.PoseStream(_dock_path(source))
         field = docking.resolve_score_field(poses, score_field)
         higher = (
             docking.higher_is_better(field)[0]
@@ -870,6 +872,8 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             "capped_below_request": result.capped_below_request,
             "selected": rows,
         }
+        if result.n_failed_fp:
+            payload["n_failed_fp"] = result.n_failed_fp
         if save_dir:
             out = os.path.abspath(os.path.expanduser(save_dir))
             os.makedirs(out, exist_ok=True)
@@ -904,7 +908,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         from . import docking
 
         pose_sets = [
-            (docking._stem(s), docking.read_poses(_dock_path(s))) for s in sources
+            (docking._stem(s), docking.PoseStream(_dock_path(s))) for s in sources
         ]
         result = docking.consensus_rank(
             pose_sets, score_fields=score_fields, key=key,
@@ -943,6 +947,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         top: int = 50, select: int = 20, threshold: float = 0.7,
         export_poses: int = 20, clusters: bool = True,
         higher_is_better: Optional[bool] = None,
+        best_pose_per_ligand: bool = True,
     ) -> str:
         """Write a self-contained HTML triage report for a docking run.
 
@@ -956,7 +961,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         """
         from . import docking
 
-        poses = docking.read_poses(_dock_path(source))
+        poses = docking.PoseStream(_dock_path(source))
         field = docking.resolve_score_field(poses, score_field)
         higher, assumed = (
             docking.higher_is_better(field) if higher_is_better is None
@@ -964,6 +969,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         )
         summary = docking.summarize(
             poses, field, higher_is_better_flag=higher, direction_assumed=assumed,
+            best_pose_per_ligand=best_pose_per_ligand,
         )
         diverse = None
         cluster_note = None
@@ -977,13 +983,15 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
                 cluster_note = f"clustering skipped: {exc}"
         out = os.path.abspath(os.path.expanduser(save_dir))
         os.makedirs(out, exist_ok=True)
-        by_id = {p.index: p for p in poses}
-        top_poses = [by_id[r["pose_id"]] for r in summary.rows[: max(0, export_poses)]]
+
+        ranked_ids = [r["pose_id"] for r in summary.rows[: max(0, export_poses)]]
+        top_poses = docking.collect_poses(poses, ranked_ids)
         poses_name = "top_poses.sdf"
         if top_poses:
             docking.write_poses_sdf(top_poses, os.path.join(out, poses_name))
+
         html = docking.render_html_report(
-            summary, source_name=os.path.basename(source), n_poses=len(poses),
+            summary, source_name=os.path.basename(source), n_poses=summary.n_poses,
             diverse=diverse, table_rows=top,
             poses_file=poses_name if top_poses else None,
         )
@@ -995,11 +1003,13 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             written.append(os.path.join(out, poses_name))
         payload = {
             "score_field": field,
-            "n_poses": len(poses),
+            "n_poses": summary.n_poses,
             "n_ranked": len(summary.rows),
             "n_clusters": diverse.n_clusters if diverse is not None else None,
             "written": written,
         }
+        if diverse is not None and diverse.n_failed_fp:
+            payload["n_failed_fp"] = diverse.n_failed_fp
         if cluster_note:
             payload["cluster_note"] = cluster_note
         return json.dumps(payload, indent=2, default=_jsonable)
