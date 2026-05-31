@@ -137,3 +137,167 @@ def test_pyg_format_with_pe_and_labels():
     assert data.edge_index.shape[0] == 2
     assert hasattr(data, "y") and float(data.y[0]) == 1.0
     assert isinstance(data.x, torch.Tensor)
+
+
+def test_dataset_summary():
+    from molscope.dataset import GraphDataset
+    from molscope.prepare import SplitResult
+
+    split = SplitResult(
+        method="random",
+        train=[0],
+        val=[],
+        test=[1],
+    )
+    ds = GraphDataset(
+        graphs=[None, None],
+        ids=["mol1", "mol2"],
+        fmt="raw",
+        labels=[1.5, None],
+        split=split,
+        skipped=[("failed_mol", "ValueError: bad format")],
+        feature_names={"node_features": ["feat1"], "edge_features": ["feat2"]},
+    )
+    summary = ds.summary()
+    assert "GraphDataset: 2 graph(s)" in summary
+    assert "fmt='raw'" in summary
+    assert "node_features: 1 (feat1)" in summary
+    assert "edge_features: 1 (feat2)" in summary
+    assert "labels: 1/2 graphs labelled" in summary
+    assert "split: train=1, validation=0, test=1" in summary
+    assert "skipped: 1 source(s)" in summary
+    assert "failed_mol: ValueError: bad format" in summary
+
+    # Empty summary to cover the False branches of summary()
+    ds_empty = GraphDataset(graphs=[], ids=[], fmt="raw")
+    summary_empty = ds_empty.summary()
+    assert "GraphDataset: 0 graph(s)" in summary_empty
+    assert "labels" not in summary_empty
+    assert "split" not in summary_empty
+    assert "skipped" not in summary_empty
+
+
+def test_invalid_on_error():
+    with pytest.raises(ValueError, match="on_error must be"):
+        build_dataset(PDBS, fmt="raw", on_error="invalid")
+
+
+def test_invalid_splits():
+    with pytest.raises(ValueError, match="split must be a"):
+        build_dataset(PDBS, fmt="raw", split="not-a-tuple")
+    with pytest.raises(ValueError, match="split must be a"):
+        build_dataset(PDBS, fmt="raw", split=(0.5, "foo", 0.5))
+
+
+def test_coerce_string_label():
+    labels = {"1fqy": "active", "3ptb": "inactive"}
+    ds = build_dataset(PDBS, fmt="raw", labels=labels)
+    by_id = dict(zip(ds.ids, ds.labels))
+    assert by_id["1fqy"] == "active"
+    assert by_id["3ptb"] == "inactive"
+
+
+def test_read_label_csv_empty_header(tmp_path):
+    csv_path = tmp_path / "empty.csv"
+    csv_path.write_text("")
+    ds = build_dataset(PDBS, fmt="raw", labels=str(csv_path))
+    assert ds.labels == [None, None, None]
+
+
+def test_read_label_csv_short_row(tmp_path):
+    csv_path = tmp_path / "short_row.csv"
+    csv_path.write_text("id,target\n1fqy,2.5\n3ptb\n")
+    ds = build_dataset(PDBS, fmt="raw", labels=str(csv_path))
+    by_id = dict(zip(ds.ids, ds.labels))
+    assert by_id["1fqy"] == 2.5
+    assert by_id["3ptb"] is None
+
+
+def test_read_label_csv_with_string_label(tmp_path):
+    csv_path = tmp_path / "string_labels.csv"
+    csv_path.write_text("id,target\n1fqy,active\n3ptb,inactive\n")
+    ds = build_dataset(PDBS, fmt="raw", labels=str(csv_path))
+    by_id = dict(zip(ds.ids, ds.labels))
+    assert by_id["1fqy"] == "active"
+    assert by_id["3ptb"] == "inactive"
+
+
+def test_save_networkx(tmp_path):
+    pytest.importorskip("networkx")
+    ds = build_dataset([f"{DATA}/1fqy.pdb"], fmt="networkx")
+    out = ds.save(str(tmp_path))
+    files = os.listdir(out)
+    assert "1fqy.json" in files
+    assert "manifest.json" in files
+
+
+def test_save_pyg(tmp_path):
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    ds = build_dataset([f"{DATA}/1fqy.pdb"], fmt="pyg")
+    out = ds.save(str(tmp_path))
+    files = os.listdir(out)
+    assert "1fqy.pt" in files
+    assert "manifest.json" in files
+
+
+def test_save_dgl_mocked(tmp_path):
+    import sys
+    from unittest.mock import MagicMock
+
+    mock_save_graphs = MagicMock()
+
+    original_modules = {}
+    for mod in ["dgl", "dgl.data.utils"]:
+        if mod in sys.modules:
+            original_modules[mod] = sys.modules[mod]
+        sys.modules[mod] = MagicMock()
+
+    try:
+        sys.modules["dgl.data.utils"].save_graphs = mock_save_graphs
+
+        from molscope.dataset import GraphDataset
+
+        mock_graph = MagicMock()
+        ds = GraphDataset(graphs=[mock_graph], ids=["dummy_dgl"], fmt="dgl")
+
+        out = ds.save(str(tmp_path))
+        assert "manifest.json" in os.listdir(out)
+        mock_save_graphs.assert_called_once()
+        call_args = mock_save_graphs.call_args[0]
+        assert "dummy_dgl.bin" in call_args[0]
+        assert call_args[1] == [mock_graph]
+
+    finally:
+        for mod in ["dgl", "dgl.data.utils"]:
+            if mod in original_modules:
+                sys.modules[mod] = original_modules[mod]
+            else:
+                sys.modules.pop(mod, None)
+
+
+def test_build_dgl_mocked():
+    import sys
+    from unittest.mock import MagicMock
+
+    mock_dgl = MagicMock()
+    mock_torch = MagicMock()
+
+    original_modules = {}
+    for mod, mock_obj in [("dgl", mock_dgl), ("torch", mock_torch)]:
+        if mod in sys.modules:
+            original_modules[mod] = sys.modules[mod]
+        sys.modules[mod] = mock_obj
+
+    try:
+        ds = build_dataset(PDBS[:1], fmt="dgl")
+        assert ds.fmt == "dgl"
+        assert len(ds.graphs) == 1
+        mock_dgl.graph.assert_called_once()
+    finally:
+        for mod in ["dgl", "torch"]:
+            if mod in original_modules:
+                sys.modules[mod] = original_modules[mod]
+            else:
+                sys.modules.pop(mod, None)
+
