@@ -1,0 +1,369 @@
+"""One-call assembly of an ML graph dataset from structure files.
+
+:func:`build_dataset` collapses the usual boilerplate (discover files, read each,
+featurise to a graph, attach positional encodings, join labels, split) into a
+single call. It is a thin orchestration layer over the existing public API
+(:func:`molscope.read`, :meth:`Molecule.to_graph` and the graph exporters), so it
+adds no new core dependency: ``fmt="pyg"``/``"dgl"`` need the matching opt-in
+extra, and ``fmt="raw"``/``"networkx"`` run on the core install.
+
+    import molscope as ms
+
+    ds = ms.build_dataset("data/*.pdb", fmt="pyg", pe="laplacian",
+                          labels="labels.csv", split=(0.8, 0.1, 0.1))
+    ds.train, ds.val, ds.test       # framework graph objects, split
+    print(ds.summary())
+
+It deliberately stops at "DataLoader-ready objects": there is no training loop,
+no model code, and no new file format.
+"""
+
+from __future__ import annotations
+
+import csv
+import glob
+import os
+from dataclasses import dataclass, field
+from typing import Optional
+
+from .io import read
+from .molecule import Molecule
+from .prepare import random_split
+
+DATASET_FORMATS = ("pyg", "dgl", "networkx", "raw")
+
+
+@dataclass
+class GraphDataset:
+    """The result of :func:`build_dataset`.
+
+    ``graphs`` holds one featurised object per successfully read structure (a
+    ``torch_geometric.data.Data``, ``dgl.DGLGraph``, ``networkx.Graph``, or
+    :class:`~molscope.graph.MolecularGraph` depending on ``fmt``), aligned with
+    ``ids`` (the file stems) and, when provided, ``labels``.
+    """
+
+    graphs: list
+    ids: list[str]
+    fmt: str
+    labels: Optional[list] = None
+    split: Optional[object] = None  # prepare.SplitResult, or None
+    skipped: list[tuple[str, str]] = field(default_factory=list)
+    feature_names: dict = field(default_factory=dict)
+
+    def __len__(self) -> int:
+        return len(self.graphs)
+
+    def _subset(self, indices):
+        return [self.graphs[i] for i in indices]
+
+    @property
+    def train(self) -> Optional[list]:
+        return None if self.split is None else self._subset(self.split.train)
+
+    @property
+    def val(self) -> Optional[list]:
+        return None if self.split is None else self._subset(self.split.val)
+
+    @property
+    def test(self) -> Optional[list]:
+        return None if self.split is None else self._subset(self.split.test)
+
+    def summary(self) -> str:
+        """One-block human-readable description of the dataset."""
+        lines = [
+            f"GraphDataset: {len(self.graphs)} graph(s), fmt={self.fmt!r}",
+        ]
+        if self.feature_names:
+            for key, names in self.feature_names.items():
+                lines.append(f"  {key}: {len(names)} ({', '.join(names)})")
+        if self.labels is not None:
+            covered = sum(1 for v in self.labels if v is not None)
+            lines.append(f"  labels: {covered}/{len(self.labels)} graphs labelled")
+        if self.split is not None:
+            sizes = ", ".join(f"{k}={v}" for k, v in self.split.sizes.items())
+            lines.append(f"  split: {sizes}")
+        if self.skipped:
+            lines.append(f"  skipped: {len(self.skipped)} source(s)")
+            for src, err in self.skipped:
+                lines.append(f"    {src}: {err}")
+        return "\n".join(lines)
+
+    def save(self, out_dir: str) -> str:
+        """Write each graph plus a ``manifest.json`` to ``out_dir``.
+
+        File types: ``.pt`` (pyg, via ``torch.save``), ``.bin`` (dgl),
+        ``.json`` (networkx node-link), ``.pkl`` (raw). Returns ``out_dir``.
+        """
+        import json
+
+        os.makedirs(out_dir, exist_ok=True)
+        files = []
+        for gid, graph in zip(self.ids, self.graphs):
+            files.append(_save_one(graph, self.fmt, out_dir, gid))
+
+        manifest = {
+            "fmt": self.fmt,
+            "ids": self.ids,
+            "files": files,
+            "feature_names": self.feature_names,
+            "labels": self.labels,
+            "skipped": self.skipped,
+        }
+        if self.split is not None:
+            manifest["split"] = {
+                "method": self.split.method,
+                "train": self.split.train,
+                "val": self.split.val,
+                "test": self.split.test,
+            }
+        with open(os.path.join(out_dir, "manifest.json"), "w") as fh:
+            json.dump(manifest, fh, indent=2)
+        return out_dir
+
+
+def build_dataset(
+    source,
+    *,
+    fmt: str = "pyg",
+    node_features: str = "default",
+    edge_features: str = "default",
+    pe: Optional[str] = None,
+    pe_k: int = 8,
+    self_loops: bool = False,
+    global_node: bool = False,
+    infer_orders: bool = False,
+    labels=None,
+    id_col: Optional[str] = None,
+    label_col: Optional[str] = None,
+    split=None,
+    seed: int = 0,
+    n_jobs: int = 1,
+    on_error: str = "skip",
+) -> GraphDataset:
+    """Build an ML graph dataset from structure files in one call.
+
+    Args:
+        source: a glob string, a list of paths, or a list of
+            :class:`~molscope.molecule.Molecule` objects.
+        fmt: output graph type, one of ``"pyg"``, ``"dgl"``, ``"networkx"``,
+            ``"raw"`` (a :class:`~molscope.graph.MolecularGraph`).
+        node_features, edge_features: feature presets passed to the exporter.
+        pe: optional positional encoding (``"laplacian"`` or ``"random_walk"``)
+            with dimension ``pe_k`` (pyg/dgl only).
+        self_loops, global_node, infer_orders: passed through to the exporter.
+        labels: optional ``{id: value}`` dict or a CSV path. CSV is keyed by
+            ``id_col`` (default: first column) against the file stem, with the
+            target in ``label_col`` (default: second column). For ``fmt="pyg"``
+            the value is also attached as ``data.y``.
+        split: optional ``(train, val, test)`` fractions for a random split.
+        seed: random seed for the split.
+        n_jobs: worker processes for featurisation (``fmt="dgl"`` runs serially).
+        on_error: ``"skip"`` (record and continue) or ``"raise"``.
+
+    Returns:
+        A :class:`GraphDataset` with ``.graphs``/``.ids``/``.labels``, the split
+        (if requested), and ``.summary()`` / ``.save()``.
+    """
+    if fmt not in DATASET_FORMATS:
+        raise ValueError(f"unknown fmt {fmt!r}; use one of: {', '.join(DATASET_FORMATS)}")
+    if on_error not in ("skip", "raise"):
+        raise ValueError(f"on_error must be 'skip' or 'raise', got {on_error!r}")
+    if pe is not None and fmt in ("networkx", "raw"):
+        raise ValueError(f"positional encodings are not supported for fmt={fmt!r}")
+
+    items = _normalise_source(source)
+    opts = {
+        "fmt": fmt,
+        "node_features": node_features,
+        "edge_features": edge_features,
+        "pe": pe,
+        "pe_k": pe_k,
+        "self_loops": self_loops,
+        "global_node": global_node,
+        "infer_orders": infer_orders,
+    }
+
+    # dgl graphs do not reliably pickle across processes; keep them serial.
+    use_jobs = 1 if fmt == "dgl" else max(1, int(n_jobs))
+
+    results = _featurise_all(items, opts, use_jobs)
+
+    graphs, ids, skipped = [], [], []
+    for label, outcome in results:
+        if isinstance(outcome, Exception):
+            if on_error == "raise":
+                raise outcome
+            skipped.append((label, f"{type(outcome).__name__}: {outcome}"))
+        else:
+            ids.append(label)
+            graphs.append(outcome)
+
+    label_list = _resolve_labels(labels, ids, id_col, label_col)
+    if label_list is not None and fmt == "pyg":
+        _attach_pyg_labels(graphs, label_list)
+
+    split_result = None
+    if split is not None:
+        train, val, test = _validate_split(split)
+        split_result = random_split(len(graphs), test=test, val=val, seed=seed)
+
+    return GraphDataset(
+        graphs=graphs,
+        ids=ids,
+        fmt=fmt,
+        labels=label_list,
+        split=split_result,
+        skipped=skipped,
+        feature_names=_feature_names(node_features, edge_features),
+    )
+
+
+# --- internals ---------------------------------------------------------------
+
+
+def _normalise_source(source):
+    """Return a list of (label, path-or-Molecule) work items."""
+    if isinstance(source, (str, os.PathLike)):
+        paths = sorted(set(glob.glob(os.fspath(source), recursive=True)))
+        if not paths:
+            raise ValueError(f"no files matched {source!r}")
+        return [(_stem(p), p) for p in paths]
+    items = []
+    for i, item in enumerate(source):
+        if isinstance(item, Molecule):
+            items.append((item.name or f"mol_{i}", item))
+        else:
+            items.append((_stem(os.fspath(item)), os.fspath(item)))
+    return items
+
+
+def _stem(path: str) -> str:
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+def _featurise_all(items, opts, n_jobs):
+    if n_jobs <= 1:
+        return [(label, _featurise(item, opts)) for label, item in items]
+    from functools import partial
+    from multiprocessing import Pool
+
+    worker = partial(_featurise, opts=opts)
+    with Pool(n_jobs) as pool:
+        outcomes = pool.map(worker, [item for _, item in items])
+    return [(label, outcome) for (label, _), outcome in zip(items, outcomes)]
+
+
+def _featurise(item, opts):
+    """Read (if needed) and convert one item to the requested graph format.
+
+    Returns the graph object, or the Exception on failure (so it is safe as a
+    multiprocessing worker, and the caller decides whether to skip or raise).
+    """
+    try:
+        mol = item if isinstance(item, Molecule) else read(item)
+        graph = mol.to_graph(infer_orders=opts["infer_orders"])
+        fmt = opts["fmt"]
+        if fmt == "raw":
+            return graph
+        if fmt == "networkx":
+            return graph.to_networkx()
+        exporter = graph.to_pyg_data if fmt == "pyg" else graph.to_dgl_graph
+        return exporter(
+            node_preset=opts["node_features"],
+            edge_preset=opts["edge_features"],
+            include_self_loops=opts["self_loops"],
+            include_global_node=opts["global_node"],
+            include_pe=opts["pe"],
+            pe_k=opts["pe_k"],
+        )
+    except Exception as exc:
+        return exc
+
+
+def _resolve_labels(labels, ids, id_col, label_col):
+    if labels is None:
+        return None
+    if isinstance(labels, dict):
+        mapping = labels
+    else:
+        mapping = _read_label_csv(os.fspath(labels), id_col, label_col)
+    return [mapping.get(gid) for gid in ids]
+
+
+def _read_label_csv(path, id_col, label_col):
+    with open(path, newline="") as fh:
+        reader = csv.reader(fh)
+        header = next(reader, None)
+        if header is None:
+            return {}
+        id_idx = header.index(id_col) if id_col else 0
+        label_idx = header.index(label_col) if label_col else 1
+        mapping = {}
+        for row in reader:
+            if len(row) <= max(id_idx, label_idx):
+                continue
+            mapping[row[id_idx]] = _coerce(row[label_idx])
+    return mapping
+
+
+def _coerce(value: str):
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def _attach_pyg_labels(graphs, label_list):
+    import torch
+
+    for graph, value in zip(graphs, label_list):
+        if value is not None:
+            graph.y = torch.tensor([value], dtype=torch.float)
+
+
+def _validate_split(split):
+    try:
+        train, val, test = (float(x) for x in split)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("split must be a (train, val, test) tuple of fractions") from exc
+    if abs((train + val + test) - 1.0) > 1e-6:
+        raise ValueError(f"split fractions must sum to 1.0, got {train + val + test}")
+    return train, val, test
+
+
+def _feature_names(node_preset, edge_preset):
+    from .graph import edge_feature_names, node_feature_names
+
+    return {
+        "node_features": list(node_feature_names(node_preset)),
+        "edge_features": list(edge_feature_names(edge_preset)),
+    }
+
+
+def _save_one(graph, fmt, out_dir, gid):
+    if fmt == "pyg":
+        import torch
+
+        out = os.path.join(out_dir, f"{gid}.pt")
+        torch.save(graph, out)
+    elif fmt == "dgl":
+        from dgl.data.utils import save_graphs
+
+        out = os.path.join(out_dir, f"{gid}.bin")
+        save_graphs(out, [graph])
+    elif fmt == "networkx":
+        import json
+
+        import networkx as nx
+
+        out = os.path.join(out_dir, f"{gid}.json")
+        with open(out, "w") as fh:
+            json.dump(nx.node_link_data(graph), fh)
+    else:  # raw
+        import pickle
+
+        out = os.path.join(out_dir, f"{gid}.pkl")
+        with open(out, "wb") as fh:
+            pickle.dump(graph, fh)
+    return os.path.basename(out)
