@@ -121,6 +121,72 @@ class GraphDataset:
             json.dump(manifest, fh, indent=2)
         return out_dir
 
+    @classmethod
+    def load(cls, out_dir: str) -> GraphDataset:
+        """Load a saved dataset from ``out_dir``.
+
+        Loads the manifest.json and all referenced graph files, reconstructing
+        the original :class:`GraphDataset` object.
+        """
+        import json
+        import pickle
+
+        manifest_path = os.path.join(out_dir, "manifest.json")
+        if not os.path.exists(manifest_path):
+            raise FileNotFoundError(f"manifest.json not found in {out_dir}")
+
+        with open(manifest_path) as fh:
+            manifest = json.load(fh)
+
+        fmt = manifest["fmt"]
+        ids = manifest["ids"]
+        files = manifest["files"]
+        labels = manifest.get("labels")
+        skipped = [tuple(item) for item in manifest.get("skipped", [])]
+        feature_names = manifest.get("feature_names", {})
+
+        graphs = []
+        for _gid, fname in zip(ids, files):
+            fpath = os.path.join(out_dir, fname)
+            if fmt == "pyg":
+                import torch
+
+                graphs.append(torch.load(fpath))
+            elif fmt == "dgl":
+                from dgl.data.utils import load_graphs
+
+                graphs.append(load_graphs(fpath)[0][0])
+            elif fmt == "networkx":
+                import networkx as nx
+
+                with open(fpath) as fh_graph:
+                    graphs.append(nx.node_link_graph(json.load(fh_graph)))
+            else:  # raw
+                with open(fpath, "rb") as fh_graph:
+                    graphs.append(pickle.load(fh_graph))
+
+        split_result = None
+        if "split" in manifest:
+            from .prepare import SplitResult
+
+            split_data = manifest["split"]
+            split_result = SplitResult(
+                method=split_data["method"],
+                train=split_data["train"],
+                val=split_data["val"],
+                test=split_data["test"],
+            )
+
+        return cls(
+            graphs=graphs,
+            ids=ids,
+            fmt=fmt,
+            labels=labels,
+            split=split_result,
+            skipped=skipped,
+            feature_names=feature_names,
+        )
+
 
 def build_dataset(
     source,
@@ -222,19 +288,49 @@ def build_dataset(
 # --- internals ---------------------------------------------------------------
 
 
+def _expand_dirs(paths: list[str]) -> list[str]:
+    expanded = []
+    supported_exts = {".pdb", ".cif", ".xyz", ".sdf", ".pdb.gz", ".cif.gz", ".xyz.gz", ".sdf.gz"}
+    for p in paths:
+        if os.path.isdir(p):
+            for root, _, files in os.walk(p):
+                for f in files:
+                    ext = ""
+                    if f.lower().endswith(".gz"):
+                        parts = f.lower().split(".")
+                        if len(parts) >= 3:
+                            ext = "." + parts[-2] + ".gz"
+                    else:
+                        ext = os.path.splitext(f)[1].lower()
+
+                    if ext in supported_exts:
+                        expanded.append(os.path.join(root, f))
+        else:
+            expanded.append(p)
+    return sorted(set(expanded))
+
+
 def _normalise_source(source):
     """Return a list of (label, path-or-Molecule) work items."""
+    if isinstance(source, Molecule):
+        source = [source]
+
     if isinstance(source, (str, os.PathLike)):
-        paths = sorted(set(glob.glob(os.fspath(source), recursive=True)))
+        paths = glob.glob(os.fspath(source), recursive=True)
+        paths = _expand_dirs(paths)
         if not paths:
             raise ValueError(f"no files matched {source!r}")
         return [(_stem(p), p) for p in paths]
+
     items = []
     for i, item in enumerate(source):
         if isinstance(item, Molecule):
             items.append((item.name or f"mol_{i}", item))
         else:
-            items.append((_stem(os.fspath(item)), os.fspath(item)))
+            path_str = os.fspath(item)
+            expanded = _expand_dirs([path_str])
+            for p in expanded:
+                items.append((_stem(p), p))
     return items
 
 
@@ -297,8 +393,14 @@ def _read_label_csv(path, id_col, label_col):
         header = next(reader, None)
         if header is None:
             return {}
-        id_idx = header.index(id_col) if id_col else 0
-        label_idx = header.index(label_col) if label_col else 1
+        try:
+            id_idx = header.index(id_col) if id_col else 0
+        except ValueError as exc:
+            raise ValueError(f"id_col={id_col!r} not found in CSV header: {header}") from exc
+        try:
+            label_idx = header.index(label_col) if label_col else 1
+        except ValueError as exc:
+            raise ValueError(f"label_col={label_col!r} not found in CSV header: {header}") from exc
         mapping = {}
         for row in reader:
             if len(row) <= max(id_idx, label_idx):
