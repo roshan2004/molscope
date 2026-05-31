@@ -301,3 +301,152 @@ def test_build_dgl_mocked():
             else:
                 sys.modules.pop(mod, None)
 
+
+def test_build_dataset_single_molecule():
+    mol = ms.read(PDBS[0])
+    ds = build_dataset(mol, fmt="raw")
+    assert len(ds) == 1
+    assert ds.ids[0] == mol.name
+
+
+def test_build_dataset_directory_source(tmp_path):
+    # Pass a single directory path
+    ds = build_dataset(DATA, fmt="raw")
+    assert len(ds) >= 3
+    assert "1fqy" in ds.ids
+
+    # Pass a list containing a directory path
+    ds2 = build_dataset([DATA], fmt="raw")
+    assert len(ds2) >= 3
+    assert "1fqy" in ds2.ids
+
+    # Test .gz file matching and extension extraction in directory walking
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    gz_file = subdir / "dummy.pdb.gz"
+    import gzip
+    with open(PDBS[0], "rb") as f_in:
+        with gzip.open(gz_file, "wb") as f_out:
+            f_out.write(f_in.read())
+
+    # Also create a non-structure .gz file (which should be ignored)
+    ignored_gz = subdir / "ignore.nope.gz"
+    ignored_gz.write_text("ignore")
+
+    # Also create a short-named .gz file (which should be ignored)
+    ignored_short_gz = subdir / "ignore.gz"
+    ignored_short_gz.write_text("ignore")
+
+    # Also create a non-structure non-gz file (which should be ignored)
+    ignored_txt = subdir / "ignore.txt"
+    ignored_txt.write_text("ignore")
+
+    ds_gz = build_dataset(str(subdir), fmt="raw")
+    assert len(ds_gz) == 1
+    assert ds_gz.ids[0] == "dummy.pdb"
+
+
+def test_csv_column_lookup_errors(tmp_path):
+    csv_path = tmp_path / "columns.csv"
+    csv_path.write_text("id,target\n1fqy,2.5\n")
+
+    with pytest.raises(ValueError, match="id_col='missing_id' not found in CSV header"):
+        build_dataset(PDBS, fmt="raw", labels=str(csv_path), id_col="missing_id")
+
+    with pytest.raises(ValueError, match="label_col='missing_target' not found in CSV header"):
+        build_dataset(PDBS, fmt="raw", labels=str(csv_path), label_col="missing_target")
+
+
+def test_round_trip_loading_raw(tmp_path):
+    from molscope.dataset import GraphDataset
+
+    ds = build_dataset(PDBS, fmt="raw", split=(0.34, 0.33, 0.33))
+    out_dir = ds.save(str(tmp_path / "raw_ds"))
+
+    loaded = GraphDataset.load(out_dir)
+    assert loaded.fmt == "raw"
+    assert loaded.ids == ds.ids
+    assert len(loaded.graphs) == len(ds.graphs)
+    assert loaded.split is not None
+    assert loaded.split.method == ds.split.method
+    assert loaded.split.train == ds.split.train
+
+
+def test_round_trip_loading_networkx(tmp_path):
+    pytest.importorskip("networkx")
+    from molscope.dataset import GraphDataset
+
+    ds = build_dataset(PDBS[:2], fmt="networkx")
+    out_dir = ds.save(str(tmp_path / "nx_ds"))
+
+    loaded = GraphDataset.load(out_dir)
+    assert loaded.fmt == "networkx"
+    assert loaded.ids == ds.ids
+    import networkx as nx
+    assert isinstance(loaded.graphs[0], nx.Graph)
+
+
+def test_round_trip_loading_pyg(tmp_path):
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    from molscope.dataset import GraphDataset
+
+    ds = build_dataset(PDBS[:2], fmt="pyg")
+    out_dir = ds.save(str(tmp_path / "pyg_ds"))
+
+    loaded = GraphDataset.load(out_dir)
+    assert loaded.fmt == "pyg"
+    assert loaded.ids == ds.ids
+    import torch
+    assert isinstance(loaded.graphs[0], torch.nn.Module) or hasattr(loaded.graphs[0], "edge_index")
+
+
+def test_round_trip_loading_dgl_mocked(tmp_path):
+    import sys
+    from unittest.mock import MagicMock
+
+    mock_load_graphs = MagicMock()
+    mock_load_graphs.return_value = [["mock_loaded_graph"], "dummy_labels"]
+
+    original_modules = {}
+    for mod in ["dgl", "dgl.data.utils"]:
+        if mod in sys.modules:
+            original_modules[mod] = sys.modules[mod]
+        sys.modules[mod] = MagicMock()
+
+    try:
+        sys.modules["dgl.data.utils"].load_graphs = mock_load_graphs
+
+        from molscope.dataset import GraphDataset
+
+        manifest_path = tmp_path / "manifest.json"
+        import json
+        manifest_data = {
+            "fmt": "dgl",
+            "ids": ["mol_dgl"],
+            "files": ["mol_dgl.bin"],
+            "labels": None,
+            "skipped": [],
+        }
+        manifest_path.write_text(json.dumps(manifest_data))
+
+        (tmp_path / "mol_dgl.bin").write_text("")
+
+        loaded = GraphDataset.load(str(tmp_path))
+        assert loaded.fmt == "dgl"
+        assert loaded.graphs == ["mock_loaded_graph"]
+        mock_load_graphs.assert_called_once()
+    finally:
+        for mod in ["dgl", "dgl.data.utils"]:
+            if mod in original_modules:
+                sys.modules[mod] = original_modules[mod]
+            else:
+                sys.modules.pop(mod, None)
+
+
+def test_load_dataset_missing_manifest():
+    from molscope.dataset import GraphDataset
+
+    with pytest.raises(FileNotFoundError, match="manifest.json not found"):
+        GraphDataset.load("does_not_exist_dir")
+
