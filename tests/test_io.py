@@ -294,6 +294,59 @@ def test_valid_v2000_sdf_still_parses():
     np.testing.assert_array_equal(np.sort(mol.bonds(), axis=0), [[0, 1], [0, 2]])
 
 
+def test_sdf_data_tags_captured_into_properties():
+    # read_sdf reads the first record and now carries its > <tag> data fields.
+    mol = ms.read(_fixture("docking_poses.sdf"))
+    assert mol.name == "ligA_pose1"
+    assert mol.properties == {"minimizedAffinity": "-8.4", "CNNscore": "0.91"}
+
+
+def test_read_sdf_frames_returns_every_pose_with_scores():
+    poses = ms.read_sdf_frames(_fixture("docking_poses.sdf"))
+    assert [m.name for m in poses] == ["ligA_pose1", "ligA_pose2", "ligB_pose1"]
+    # 3D coordinates are preserved per pose (no SMILES round-trip).
+    assert [len(m) for m in poses] == [3, 3, 2]
+    assert poses[2].elements == ["N", "H"]
+    # Docking scores ride along as string properties, ready for ranking.
+    ranked = sorted(poses, key=lambda m: float(m.properties["minimizedAffinity"]))
+    assert [m.name for m in ranked] == ["ligA_pose1", "ligB_pose1", "ligA_pose2"]
+
+
+def test_read_sdf_frames_skips_unterminated_and_broken_records(tmp_path):
+    # Last record omits the $$$$ terminator; a middle record is malformed.
+    sdf = tmp_path / "messy.sdf"
+    sdf.write_text(
+        "good1\n  prog\n\n"
+        "  1  0  0  0  0  0  0  0  0  0999 V2000\n"
+        "    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n>  <score>\n-5.0\n\n$$$$\n"
+        "broken\n  prog\n\n"
+        "   X  0  0  0  0  0  0  0  0  0999 V2000\nM  END\n$$$$\n"
+        "good2\n  prog\n\n"
+        "  1  0  0  0  0  0  0  0  0  0999 V2000\n"
+        "    2.0000    2.0000    2.0000 N   0  0  0  0  0  0  0  0  0  0  0  0\n"
+        "M  END\n>  <score>\n-9.0\n"
+    )
+    poses = ms.read_sdf_frames(str(sdf))
+    assert [m.name for m in poses] == ["good1", "good2"]
+    assert poses[0].properties["score"] == "-5.0"
+    assert poses[1].properties["score"] == "-9.0"
+
+
+def test_read_sdf_frames_empty_file_errors(tmp_path):
+    empty = tmp_path / "empty.sdf"
+    empty.write_text("\n\n")
+    with pytest.raises(ValueError, match="no readable records"):
+        ms.read_sdf_frames(str(empty))
+
+
+def test_read_sdf_frames_reads_single_record_mol():
+    # A plain single-molecule SDF is just a one-element list.
+    poses = ms.read_sdf_frames(_fixture("water.sdf"))
+    assert len(poses) == 1
+    assert poses[0].elements == ["O", "H", "H"]
+
+
 def test_pdb_preserves_rich_residue_ids_and_insertion_codes(tmp_path):
     mol = ms.read(_fixture("ugly_residue_ids.pdb"))
     assert len(mol) == 9                         # altLoc B ligand atom is skipped

@@ -34,7 +34,7 @@ Examples
 See https://github.com/roshan2004/molscope for the full documentation.
 """
 
-from . import coarsegrain, contacts, dssp, ensemble
+from . import coarsegrain, contacts, docking, dssp, ensemble
 from .chem import ChemicalFeatures, chemical_features, rdkit_descriptors, to_rdkit
 from .cif import CifValidationReport, validate_cif
 from .coarsegrain import (
@@ -84,6 +84,7 @@ from .io import (
     read_pdb,
     read_pdb_models,
     read_sdf,
+    read_sdf_frames,
     read_smiles,
     read_xyz,
     read_xyz_frames,
@@ -133,6 +134,7 @@ __all__ = [
     "contacts",
     "descriptor_feature_names",
     "descriptors",
+    "docking",
     "dssp",
     "ensemble",
     "ensemble_contact_frequency",
@@ -151,6 +153,7 @@ __all__ = [
     "read_pdb",
     "read_pdb_models",
     "read_sdf",
+    "read_sdf_frames",
     "read_smiles",
     "read_xyz",
     "read_xyz_frames",

@@ -482,48 +482,110 @@ def read_sdf(path: str) -> Molecule:
     """Read the first molecule from an SDF / MDL MOL (V2000) file.
 
     Atom coordinates, element symbols, explicit bonds and V2000 bond orders are
-    preserved.
+    preserved. Any ``> <tag>`` data fields on the record are captured into
+    :attr:`Molecule.properties`. For multi-record files (e.g. docking output
+    with one record per pose) use :func:`read_sdf_frames` to read every pose.
     """
     with _open(path) as f:
         lines = f.readlines()
-    if len(lines) < 4:
+    mol, _ = _parse_sdf_record(lines, 0, path, _stem(path), record_no=1)
+    return mol
+
+
+def read_sdf_frames(path: str) -> list[Molecule]:
+    """Read every record of a multi-record ``.sdf`` as a list of molecules.
+
+    SDF is the common output format for docking tools (AutoDock Vina, Gnina,
+    Smina), with one record per pose and the score carried as a ``> <tag>`` data
+    field (e.g. ``minimizedAffinity``, ``CNNaffinity``, ``CNNscore``). Each
+    returned :class:`Molecule` keeps its 3D coordinates and exposes the record's
+    data fields via :attr:`Molecule.properties`, so poses can be ranked, filtered
+    or fed straight into descriptor and contact-map analysis without an RDKit
+    round-trip through SMILES (which would discard the 3D pose).
+
+    Records that fail to parse are skipped rather than aborting the whole file;
+    an all-empty file raises :class:`ValueError`.
+    """
+    with _open(path) as f:
+        lines = f.readlines()
+    stem = _stem(path)
+    frames: list[Molecule] = []
+    i, n_lines, record_no = 0, len(lines), 0
+    while i < n_lines:
+        # Skip blank padding between records (some writers add trailing newlines).
+        if not lines[i].strip():
+            i += 1
+            continue
+        record_no += 1
+        try:
+            mol, nxt = _parse_sdf_record(
+                lines, i, path, f"{stem}#{record_no}", record_no=record_no
+            )
+        except ValueError:
+            # Resynchronise on the next record boundary and drop this one.
+            nxt = i + 1
+            while nxt < n_lines and lines[nxt].rstrip() != "$$$$":
+                nxt += 1
+            nxt += 1
+            i = nxt
+            continue
+        frames.append(mol)
+        i = nxt
+    if not frames:
+        raise _parse_error(path, "SDF", "no readable records in file")
+    return frames
+
+
+def _parse_sdf_record(
+    lines: list[str], start: int, path: str, name: str, record_no: int
+) -> tuple[Molecule, int]:
+    """Parse one V2000 record beginning at ``lines[start]``.
+
+    Returns the molecule and the index of the line just past the record's
+    ``$$$$`` terminator (or the end of file). ``start`` points at the record's
+    title line; the counts line is therefore at ``start + 3``.
+    """
+    counts_idx = start + 3
+    if counts_idx >= len(lines):
         raise _parse_error(path, "SDF", "file has fewer than the 4 required header lines")
-    counts = lines[3]
+    counts = lines[counts_idx]
     if "V3000" in counts.upper():
         raise _parse_error(
             path, "SDF",
             "V3000 connection tables are not supported (only V2000); "
-            "convert the file with RDKit or OpenBabel first", 4,
+            "convert the file with RDKit or OpenBabel first", counts_idx + 1,
         )
     try:
         n_atoms = int(counts[:3])
         n_bonds = int(counts[3:6])
     except ValueError:
         raise _parse_error(
-            path, "SDF", f"malformed counts line: {counts.rstrip()!r}", 4,
+            path, "SDF", f"malformed counts line: {counts.rstrip()!r}", counts_idx + 1,
         ) from None
-    if len(lines) < 4 + n_atoms + n_bonds:
+    atom_start = counts_idx + 1
+    bond_start = atom_start + n_atoms
+    if len(lines) < bond_start + n_bonds:
         raise _parse_error(
             path, "SDF",
             f"counts line declares {n_atoms} atoms and {n_bonds} bonds, "
-            f"but the file has only {len(lines) - 4} block lines after it",
-            4,
+            f"but the file has only {len(lines) - atom_start} block lines after it",
+            counts_idx + 1,
         )
 
     coords, els, formal_charges = [], [], []
-    for offset, line in enumerate(lines[4:4 + n_atoms]):
+    for offset, line in enumerate(lines[atom_start:atom_start + n_atoms]):
         try:
             coords.append((float(line[0:10]), float(line[10:20]), float(line[20:30])))
         except ValueError:
             raise _parse_error(
                 path, "SDF", f"could not read atom coordinates from {line.rstrip()!r}",
-                5 + offset,
+                atom_start + offset + 1,
             ) from None
         els.append(line[31:34].strip())
         formal_charges.append(_sdf_charge_from_code(line[36:39].strip()))
 
     bonds, orders = [], []
-    for offset, line in enumerate(lines[4 + n_atoms:4 + n_atoms + n_bonds]):
+    for offset, line in enumerate(lines[bond_start:bond_start + n_bonds]):
         try:
             a = int(line[0:3]) - 1
             b = int(line[3:6]) - 1
@@ -531,25 +593,72 @@ def read_sdf(path: str) -> Molecule:
         except ValueError:
             raise _parse_error(
                 path, "SDF", f"could not read bond record from {line.rstrip()!r}",
-                5 + n_atoms + offset,
+                bond_start + offset + 1,
             ) from None
         bonds.append((a, b))
         orders.append(_sdf_bond_order(order))
 
-    for line in lines[4 + n_atoms + n_bonds:]:
-        if line.startswith("M  END"):
-            break
-        if line.startswith("M  CHG"):
-            _apply_sdf_charge_line(line, formal_charges)
+    i = bond_start + n_bonds
+    while i < len(lines) and not lines[i].startswith("M  END"):
+        if lines[i].startswith("M  CHG"):
+            _apply_sdf_charge_line(lines[i], formal_charges)
+        i += 1
+    properties, end = _parse_sdf_data_block(lines, i)
 
     bond_index = np.array(bonds, dtype=int).reshape(-1, 2)
     bond_orders = np.array(orders, dtype=float) if bonds else None
-    return Molecule(
-        np.array(coords, dtype=float), els, name=_stem(path),
+    title = lines[start].strip()
+    mol = Molecule(
+        np.array(coords, dtype=float).reshape(-1, 3), els, name=title or name,
         bond_index=bond_index if bonds else None,
         bond_orders=bond_orders,
         formal_charges=np.array(formal_charges, dtype=int),
+        properties=properties,
     )
+    return mol, end
+
+
+def _parse_sdf_data_block(lines: list[str], start: int) -> tuple[dict[str, str], int]:
+    """Read the ``> <tag>`` data fields after ``M  END`` up to ``$$$$``.
+
+    ``start`` points at (or before) the ``M  END`` line. Returns the parsed
+    ``{tag: value}`` map and the index just past the ``$$$$`` terminator (or the
+    end of file when the final record omits it).
+    """
+    properties: dict[str, str] = {}
+    i = start
+    while i < len(lines) and not lines[i].startswith("M  END"):
+        i += 1
+    i += 1  # step past "M  END"
+    while i < len(lines):
+        line = lines[i]
+        if line.rstrip() == "$$$$":
+            return properties, i + 1
+        tag = _sdf_tag_name(line)
+        if tag is not None:
+            value_lines: list[str] = []
+            i += 1
+            while i < len(lines):
+                v = lines[i]
+                if not v.strip() or v.rstrip() == "$$$$" or _sdf_tag_name(v) is not None:
+                    break
+                value_lines.append(v.rstrip("\n"))
+                i += 1
+            if tag not in properties:  # first occurrence wins on duplicate tags
+                properties[tag] = "\n".join(value_lines).strip()
+        else:
+            i += 1
+    return properties, i
+
+
+def _sdf_tag_name(line: str) -> Optional[str]:
+    """Return the tag from an SDF data header line ``> <tag>``, else ``None``."""
+    if not line.lstrip().startswith(">"):
+        return None
+    lo, hi = line.find("<"), line.rfind(">")
+    if lo != -1 and hi > lo:
+        return line[lo + 1:hi].strip() or None
+    return None
 
 
 def write_xyz(molecule: Molecule, path: str) -> None:

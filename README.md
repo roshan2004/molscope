@@ -107,12 +107,18 @@ runnable tour over the bundled samples lives in [`examples/tour.py`](examples/to
 | `molscope binding-site` | ligand binding-site contacts and pocket descriptors |
 | `molscope export` | batch graph export to PyG / DGL / NetworkX |
 | `molscope select` | diverse subset from a CSV/XLSX table |
+| `molscope dock-summary` | rank docking poses from an SDF; summary + top-hit tables + score plot |
+| `molscope dock-diverse` | diverse shortlist of top hits by Tanimoto clustering |
+| `molscope dock-rank` | transparent consensus ranking across scored SDFs |
+| `molscope dock-report` | self-contained HTML report + top poses for PyMOL/ChimeraX/Mol* |
 
 ```bash
 molscope examples/data/1fqy.pdb --select atom_name=CA --color-by residue --save ca.png
 molscope analyze examples/data/*.pdb --out results.csv --preset native-3d --jobs 4
 molscope export "data/*.cif" --to pyg --out-dir pyg_graphs/ --pe laplacian --jobs 8
 molscope select molecules.csv --smiles-col SMILES --compute-descriptors -n 100 --out picked.csv
+molscope dock-summary vina_out.sdf --score-field minimizedAffinity --top 20
+molscope dock-diverse vina_out.sdf --top 500 --select 50
 ```
 
 ## Use from an AI assistant (MCP)

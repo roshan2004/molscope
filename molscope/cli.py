@@ -200,6 +200,136 @@ def main(argv=None) -> int:
     )
     prepare_parser.set_defaults(standardize=True, figure=True)
 
+    # -- DOCK-SUMMARY subcommand -------------------------------------------
+    dock_summary_parser = subparsers.add_parser(
+        "dock-summary",
+        help="rank docking poses from an SDF and write summary/top-hit tables",
+    )
+    dock_summary_parser.add_argument("file", help="docking output SDF (one record per pose)")
+    dock_summary_parser.add_argument(
+        "--score-field", metavar="TAG",
+        help="SDF data field holding the score (auto-detected if omitted)",
+    )
+    dock_summary_parser.add_argument(
+        "--out-dir", "-o", default=".", help="output directory (default: current)",
+    )
+    dock_summary_parser.add_argument(
+        "--top", type=int, default=10, metavar="N", help="rows in top_hits.csv (default: 10)",
+    )
+    direction = dock_summary_parser.add_mutually_exclusive_group()
+    direction.add_argument(
+        "--higher-is-better", dest="higher", action="store_true",
+        help="treat a larger score as a better hit (e.g. CNNscore)",
+    )
+    direction.add_argument(
+        "--lower-is-better", dest="higher", action="store_false",
+        help="treat a smaller score as a better hit (e.g. Vina affinity)",
+    )
+    dock_summary_parser.add_argument(
+        "--no-smiles", dest="smiles", action="store_false",
+        help="skip SMILES perception (otherwise needs RDKit; blank without it)",
+    )
+    dock_summary_parser.add_argument(
+        "--no-figure", dest="figure", action="store_false", help="skip score_distribution.png",
+    )
+    dock_summary_parser.set_defaults(higher=None, smiles=True, figure=True)
+
+    # -- DOCK-DIVERSE subcommand -------------------------------------------
+    dock_diverse_parser = subparsers.add_parser(
+        "dock-diverse",
+        help="pick a diverse subset of top docking hits (Tanimoto clustering; needs RDKit)",
+    )
+    dock_diverse_parser.add_argument("file", help="docking output SDF (one record per pose)")
+    dock_diverse_parser.add_argument("--score-field", metavar="TAG", help="score data field")
+    dock_diverse_parser.add_argument(
+        "--top", type=int, default=500, metavar="N",
+        help="rank, then cluster the best N (default: 500)",
+    )
+    dock_diverse_parser.add_argument(
+        "--select", type=int, default=50, metavar="N",
+        help="diverse representatives to keep (default: 50)",
+    )
+    dock_diverse_parser.add_argument(
+        "--threshold", type=float, default=0.7, metavar="T",
+        help="Tanimoto similarity cutoff for clustering (default: 0.7)",
+    )
+    dock_diverse_parser.add_argument("--out-dir", "-o", default=".", help="output directory")
+    ddir = dock_diverse_parser.add_mutually_exclusive_group()
+    ddir.add_argument("--higher-is-better", dest="higher", action="store_true")
+    ddir.add_argument("--lower-is-better", dest="higher", action="store_false")
+    dock_diverse_parser.set_defaults(higher=None)
+
+    # -- DOCK-RANK subcommand ----------------------------------------------
+    dock_rank_parser = subparsers.add_parser(
+        "dock-rank",
+        help="consensus-rank hits across one or more scored SDFs (transparent rank aggregation)",
+    )
+    dock_rank_parser.add_argument("files", nargs="+", help="one or more scored SDF files")
+    dock_rank_parser.add_argument(
+        "--method", choices=["consensus"], default="consensus",
+        help="ranking method (currently: consensus = mean rank across score fields)",
+    )
+    dock_rank_parser.add_argument(
+        "--score-fields", nargs="+", metavar="TAG",
+        help="score fields to aggregate (auto-detected from known fields if omitted)",
+    )
+    dock_rank_parser.add_argument(
+        "--key", choices=["name", "smiles"], default="name",
+        help="join molecules across files by this key (smiles needs RDKit)",
+    )
+    dock_rank_parser.add_argument(
+        "--higher-is-better", nargs="+", metavar="TAG", default=None,
+        help="score fields where a larger value is better (overrides the defaults)",
+    )
+    dock_rank_parser.add_argument(
+        "--lower-is-better", nargs="+", metavar="TAG", default=None,
+        help="score fields where a smaller value is better (overrides the defaults)",
+    )
+    dock_rank_parser.add_argument(
+        "--mw-max", type=float, metavar="DA",
+        help="drop hits above this molecular weight (needs RDKit)",
+    )
+    dock_rank_parser.add_argument(
+        "--logp-max", type=float, metavar="X",
+        help="drop hits above this cLogP (needs RDKit)",
+    )
+    dock_rank_parser.add_argument(
+        "--out", "-o", default="dock_ranking.csv",
+        help="output CSV path (default: dock_ranking.csv)",
+    )
+
+    # -- DOCK-REPORT subcommand --------------------------------------------
+    dock_report_parser = subparsers.add_parser(
+        "dock-report",
+        help="build a self-contained HTML triage report (table, histogram, clusters)",
+    )
+    dock_report_parser.add_argument("file", help="docking output SDF (one record per pose)")
+    dock_report_parser.add_argument("--score-field", metavar="TAG", help="score data field")
+    dock_report_parser.add_argument("--out-dir", "-o", default=".", help="output directory")
+    dock_report_parser.add_argument(
+        "--top", type=int, default=50, metavar="N", help="hits shown in the table (default: 50)",
+    )
+    dock_report_parser.add_argument(
+        "--select", type=int, default=20, metavar="N",
+        help="diverse cluster representatives to show (default: 20; needs RDKit)",
+    )
+    dock_report_parser.add_argument(
+        "--threshold", type=float, default=0.7, metavar="T",
+        help="Tanimoto similarity cutoff for clustering (default: 0.7)",
+    )
+    dock_report_parser.add_argument(
+        "--export-poses", type=int, default=20, metavar="N",
+        help="top poses written to top_poses.sdf for PyMOL/ChimeraX/Mol* (default: 20)",
+    )
+    dock_report_parser.add_argument(
+        "--no-clusters", dest="clusters", action="store_false",
+        help="skip the diverse-representatives section",
+    )
+    rdir = dock_report_parser.add_mutually_exclusive_group()
+    rdir.add_argument("--higher-is-better", dest="higher", action="store_true")
+    rdir.add_argument("--lower-is-better", dest="higher", action="store_false")
+    dock_report_parser.set_defaults(higher=None, clusters=True)
+
     # Default to 'view' if no subcommand provided
     if argv is None:
         argv = sys.argv[1:]
@@ -219,6 +349,14 @@ def main(argv=None) -> int:
         return _run_select(args)
     if args.command == "prepare":
         return _run_prepare(args)
+    if args.command == "dock-summary":
+        return _run_dock_summary(args)
+    if args.command == "dock-diverse":
+        return _run_dock_diverse(args)
+    if args.command == "dock-rank":
+        return _run_dock_rank(args)
+    if args.command == "dock-report":
+        return _run_dock_report(args)
 
     return 0
 
@@ -623,6 +761,216 @@ def _run_export(args: argparse.Namespace) -> int:
     print(f"Successfully exported {sum(successes)} structures to {args.out_dir}")
     return 0
 
+
+
+def _write_csv_rows(path: str, columns: list[str], rows: list[dict]) -> None:
+    import csv
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({c: row.get(c, "") for c in columns})
+
+
+def _run_dock_summary(args: argparse.Namespace) -> int:
+    from . import docking
+
+    try:
+        poses = docking.read_poses(args.file)
+        score_field = docking.resolve_score_field(poses, args.score_field)
+    except (OSError, ValueError) as exc:
+        print(f"dock-summary failed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.higher is None:
+        higher, assumed_dir = docking.higher_is_better(score_field)
+    else:
+        higher, assumed_dir = args.higher, False
+
+    result = docking.summarize(
+        poses, score_field, higher_is_better_flag=higher,
+        direction_assumed=assumed_dir, with_smiles=args.smiles,
+    )
+    if not result.rows:
+        print(
+            f"no poses had a numeric {score_field!r} value "
+            f"({result.n_missing} skipped)", file=sys.stderr,
+        )
+        return 2
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    columns = ["rank", "pose_id", "name", "smiles", "score",
+               "ligand_efficiency", "n_heavy_atoms"]
+    summary_path = os.path.join(args.out_dir, "dock_summary.csv")
+    top_path = os.path.join(args.out_dir, "top_hits.csv")
+    _write_csv_rows(summary_path, columns, result.rows)
+    _write_csv_rows(top_path, columns, result.rows[: max(0, args.top)])
+    written = [summary_path, top_path]
+
+    if args.figure:
+        fig_path = os.path.join(args.out_dir, "score_distribution.png")
+        if docking.plot_score_distribution(result.scores, score_field, fig_path):
+            written.append(fig_path)
+
+    direction = "higher-is-better" if higher else "lower-is-better"
+    note = " (assumed; pass --higher/--lower-is-better)" if result.direction_assumed else ""
+    print(f"ranked {len(result.rows)} poses by {score_field!r} ({direction}{note})")
+    if result.n_missing:
+        print(f"skipped {result.n_missing} pose(s) with no numeric {score_field!r}")
+    if args.smiles and not result.with_smiles:
+        print("SMILES column left blank: RDKit not installed (pip install \"molscope[chem]\")")
+    best = result.rows[0]
+    print(f"top hit: {best['name']} (score={best['score']:.3f})")
+    print(f"wrote {len(written)} file(s) to {args.out_dir}/")
+    return 0
+
+
+def _run_dock_diverse(args: argparse.Namespace) -> int:
+    from . import docking
+
+    try:
+        poses = docking.read_poses(args.file)
+        score_field = docking.resolve_score_field(poses, args.score_field)
+    except (OSError, ValueError) as exc:
+        print(f"dock-diverse failed: {exc}", file=sys.stderr)
+        return 2
+
+    higher = (
+        docking.higher_is_better(score_field)[0] if args.higher is None else args.higher
+    )
+    try:
+        result = docking.select_diverse_hits(
+            poses, score_field, higher_is_better_flag=higher,
+            top=args.top, select=args.select, threshold=args.threshold,
+        )
+    except ImportError as exc:
+        print(f"dock-diverse needs RDKit: {exc}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"dock-diverse failed: {exc}", file=sys.stderr)
+        return 2
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    csv_path = os.path.join(args.out_dir, "diverse_hits.csv")
+    sdf_path = os.path.join(args.out_dir, "diverse_hits.sdf")
+    columns = ["rank", "pose_id", "name", "smiles", "score", "cluster_id", "cluster_size"]
+    _write_csv_rows(csv_path, columns, [s for s in result.selected])
+    docking.write_poses_sdf([s["pose"] for s in result.selected], sdf_path)
+
+    print(
+        f"clustered {result.n_pool} hits into {result.n_clusters} cluster(s) "
+        f"at Tanimoto similarity {result.threshold:g}"
+    )
+    if result.capped_below_request:
+        print(
+            f"only {result.n_clusters} diverse cluster(s) exist, fewer than the "
+            f"{result.requested} requested: returning all of them"
+        )
+    print(f"selected {len(result.selected)} diverse representative(s)")
+    print(f"wrote {csv_path} and {sdf_path}")
+    return 0
+
+
+def _run_dock_rank(args: argparse.Namespace) -> int:
+    from . import docking
+
+    pose_sets = []
+    try:
+        for path in args.files:
+            pose_sets.append((docking._stem(path), docking.read_poses(path)))
+        result = docking.consensus_rank(
+            pose_sets,
+            score_fields=args.score_fields,
+            key=args.key,
+            higher=set(args.higher_is_better) if args.higher_is_better else None,
+            lower=set(args.lower_is_better) if args.lower_is_better else None,
+            mw_max=args.mw_max,
+            logp_max=args.logp_max,
+        )
+    except ImportError as exc:
+        print(f"dock-rank needs RDKit for that option: {exc}", file=sys.stderr)
+        return 2
+    except (OSError, ValueError) as exc:
+        print(f"dock-rank failed: {exc}", file=sys.stderr)
+        return 2
+
+    _write_csv_rows(args.out, result.columns, result.rows)
+
+    print(f"consensus ranking over {len(result.rows)} molecule(s), joined by {result.key}")
+    print("score fields used (direction):")
+    for col in result.score_columns:
+        arrow = "higher=better" if result.directions[col] else "lower=better"
+        tag = " [assumed]" if col in result.assumed else ""
+        print(f"  - {col}: {arrow}{tag}")
+    if result.n_dropped_filter:
+        print(f"dropped {result.n_dropped_filter} hit(s) on MW/logP filters")
+    print(
+        "note: consensus rank is mean rank across these fields, a transparent "
+        "triage heuristic, not a calibrated 'true' affinity"
+    )
+    print(f"wrote {args.out}")
+    return 0
+
+
+def _run_dock_report(args: argparse.Namespace) -> int:
+    from . import docking
+
+    try:
+        poses = docking.read_poses(args.file)
+        score_field = docking.resolve_score_field(poses, args.score_field)
+    except (OSError, ValueError) as exc:
+        print(f"dock-report failed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.higher is None:
+        higher, assumed_dir = docking.higher_is_better(score_field)
+    else:
+        higher, assumed_dir = args.higher, False
+
+    summary = docking.summarize(
+        poses, score_field, higher_is_better_flag=higher, direction_assumed=assumed_dir,
+    )
+    if not summary.rows:
+        print(f"no poses had a numeric {score_field!r} value", file=sys.stderr)
+        return 2
+
+    diverse = None
+    if args.clusters:
+        try:
+            diverse = docking.select_diverse_hits(
+                poses, score_field, higher_is_better_flag=higher,
+                top=max(500, args.top), select=args.select, threshold=args.threshold,
+            )
+        except ImportError:
+            print("clustering skipped: RDKit not installed (pip install \"molscope[chem]\")")
+        except ValueError as exc:
+            print(f"clustering skipped: {exc}")
+
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    # Top poses for external 3D viewers: re-emit the best records as one SDF.
+    poses_name = "top_poses.sdf"
+    by_id = {p.index: p for p in poses}
+    top_poses = [by_id[r["pose_id"]] for r in summary.rows[: max(0, args.export_poses)]]
+    if top_poses:
+        docking.write_poses_sdf(top_poses, os.path.join(args.out_dir, poses_name))
+
+    html = docking.render_html_report(
+        summary, source_name=os.path.basename(args.file), n_poses=len(poses),
+        diverse=diverse, table_rows=args.top,
+        poses_file=poses_name if top_poses else None,
+    )
+    report_path = os.path.join(args.out_dir, "dock_report.html")
+    with open(report_path, "w") as handle:
+        handle.write(html)
+
+    print(f"ranked {len(summary.rows)} poses by {score_field!r}")
+    if diverse is not None:
+        print(f"clustered into {diverse.n_clusters} group(s); showed {len(diverse.selected)}")
+    if top_poses:
+        print(f"wrote {len(top_poses)} top pose(s) to {poses_name} for PyMOL/ChimeraX/Mol*")
+    print(f"wrote {report_path}")
+    return 0
 
 
 def _expand_globs(patterns: list[str]) -> list[str]:
