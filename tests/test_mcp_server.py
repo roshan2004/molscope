@@ -69,6 +69,10 @@ EXPECTED_TOOLS = {
     "select_diverse",
     "prepare_dataset",
     "find_duplicates",
+    "dock_summary",
+    "dock_diverse",
+    "dock_rank",
+    "dock_report",
     "render_structure",
     "render_contact_map",
     "render_distance_matrix",
@@ -78,6 +82,29 @@ EXPECTED_TOOLS = {
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 ENSEMBLE = os.path.join(DATA, "1aml.pdb")  # 20-model NMR ensemble
 TWO_CHAIN = os.path.join(FIXTURES, "ugly_residue_ids.pdb")  # chains A and B
+DOCK_SDF = os.path.join(FIXTURES, "docking_poses.sdf")  # 3 poses, minimizedAffinity
+
+
+def _write_ligand_sdf(path, score_field="minimizedAffinity"):
+    """A few distinct scaffolds with docking scores, for clustering/ranking tests."""
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    ligands = [
+        ("ethanol", "CCO", -5.1), ("propanol", "CCCO", -5.0),
+        ("benzene", "c1ccccc1", -7.2), ("toluene", "Cc1ccccc1", -7.4),
+        ("aspirin", "CC(=O)Oc1ccccc1C(=O)O", -8.9),
+        ("caffeine", "Cn1cnc2c1c(=O)n(C)c(=O)n2C", -8.1),
+    ]
+    writer = Chem.SDWriter(str(path))
+    for name, smi, vina in ligands:
+        mol = Chem.AddHs(Chem.MolFromSmiles(smi))
+        AllChem.EmbedMolecule(mol, randomSeed=42)
+        mol.SetProp("_Name", name)
+        mol.SetProp(score_field, f"{vina:.2f}")
+        writer.write(mol)
+    writer.close()
+    return str(path)
 
 
 def test_server_registers_expected_tools(server):
@@ -522,3 +549,60 @@ def test_main_runs_server(monkeypatch):
     monkeypatch.setattr(srv, "build_server", lambda: _FakeServer())
     srv.main()
     assert calls.get("ran") is True
+
+
+# -- docking tools ----------------------------------------------------------
+
+def test_dock_summary_ranks_and_autodetects(server):
+    out = _json(server, "dock_summary", source=DOCK_SDF, with_smiles=False)
+    assert out["score_field"] == "minimizedAffinity"
+    assert out["direction"] == "lower_is_better"
+    assert out["n_poses"] == 3
+    assert [r["name"] for r in out["rows"]] == ["ligA_pose1", "ligB_pose1", "ligA_pose2"]
+    assert out["rows"][0]["rank"] == 1
+
+
+def test_dock_summary_writes_files(server, tmp_path):
+    out = _json(server, "dock_summary", source=DOCK_SDF, top=2, save_dir=str(tmp_path))
+    written = {os.path.basename(p) for p in out["written"]}
+    assert {"dock_summary.csv", "top_hits.csv", "score_distribution.png"} <= written
+    assert (tmp_path / "dock_summary.csv").exists()
+
+
+def test_dock_summary_unknown_field_errors(server):
+    with pytest.raises(Exception, match="available fields"):
+        _json(server, "dock_summary", source=DOCK_SDF, score_field="nope")
+
+
+def test_dock_rank_consensus_across_files(server):
+    out = _json(
+        server, "dock_rank", sources=[DOCK_SDF, DOCK_SDF],
+        score_fields=["minimizedAffinity"],
+    )
+    assert out["key"] == "name"
+    assert out["rows"][0]["key"] == "ligA_pose1"
+    assert out["rows"][0]["final_rank"] == 1
+    assert "triage heuristic" in out["note"]
+
+
+def test_dock_diverse_selects_representatives(server, tmp_path):
+    pytest.importorskip("rdkit")
+    sdf = _write_ligand_sdf(tmp_path / "vina.sdf")
+    out = _json(
+        server, "dock_diverse", source=sdf, score_field="minimizedAffinity",
+        top=6, select=3, threshold=0.5, save_dir=str(tmp_path / "out"),
+    )
+    assert len(out["selected"]) == 3
+    assert out["selected"][0]["name"] == "aspirin"        # best score leads
+    assert {"cluster_id", "cluster_size"} <= set(out["selected"][0])
+    assert (tmp_path / "out" / "diverse_hits.sdf").exists()
+
+
+def test_dock_report_writes_html_and_poses(server, tmp_path):
+    out = _json(
+        server, "dock_report", source=DOCK_SDF, save_dir=str(tmp_path),
+        clusters=False, export_poses=2,
+    )
+    written = {os.path.basename(p) for p in out["written"]}
+    assert "dock_report.html" in written and "top_poses.sdf" in written
+    assert "<!DOCTYPE html>" in (tmp_path / "dock_report.html").read_text()
