@@ -18,6 +18,14 @@ PANEL = {
     "pyridine": "n1ccccc1",
     "nitrobenzene": "O=[N+]([O-])c1ccccc1",
     "glycine_zwitterion": "[NH3+]CC(=O)[O-]",
+    "imidazole": "c1c[nH]cn1",            # multi-N heteroaromatic
+    "furan": "c1ccoc1",                   # O heteroaromatic
+    "thiophene": "c1ccsc1",               # S heteroaromatic
+    "phenol": "Oc1ccccc1",                # aromatic + H-bond donor
+    "aniline": "Nc1ccccc1",
+    "acetate": "CC(=O)[O-]",              # anion
+    "methylammonium": "C[NH3+]",          # cation
+    "histidine": "N[C@@H](Cc1c[nH]cn1)C(=O)O",   # ring + amine + acid
 }
 
 DESCRIPTORS = ("MolWt", "TPSA", "NumHDonors", "NumHAcceptors", "RingCount")

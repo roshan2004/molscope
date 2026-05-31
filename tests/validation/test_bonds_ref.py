@@ -14,7 +14,9 @@ import molscope as ms
 
 pytestmark = pytest.mark.validation
 
-# name -> SMILES; a small spread of hybridisations, rings and heteroatoms.
+# name -> SMILES; a spread of hybridisations, fused rings, heteroatoms,
+# halogens, sulfur and a strained small ring. Distance-only perception should
+# recover the connectivity of all of these clean equilibrium geometries.
 PANEL = {
     "ethanol": "CCO",
     "benzene": "c1ccccc1",
@@ -23,6 +25,17 @@ PANEL = {
     "glycine": "NCC(=O)O",
     "toluene": "Cc1ccccc1",
     "acetic_acid": "CC(=O)O",
+    "furan": "c1ccoc1",                 # O heteroaromatic
+    "thiophene": "c1ccsc1",             # S heteroaromatic
+    "imidazole": "c1c[nH]cn1",          # two-nitrogen heteroaromatic
+    "pyrrole": "c1cc[nH]c1",
+    "naphthalene": "c1ccc2ccccc2c1",    # fused aromatic rings
+    "indole": "c1ccc2[nH]ccc2c1",       # fused hetero/aromatic
+    "chlorobenzene": "Clc1ccccc1",      # halogen
+    "dimethyl_sulfoxide": "CS(=O)C",    # sulfoxide S=O
+    "acetamide": "CC(=O)N",             # amide
+    "cyclopropane": "C1CC1",            # strained small ring, acute angles
+    "cyclohexane": "C1CCCCC1",
 }
 
 
@@ -54,3 +67,31 @@ def test_distance_bonds_recover_rdkit_topology(name):
     # molecules without letting a real perception regression slip through.
     assert recall >= 0.98
     assert precision >= 0.98
+
+
+def test_distance_bonds_miss_a_stretched_bond():
+    """A documented failure mode: distance-only perception keys on equilibrium
+    covalent distances, so a non-equilibrium (stretched) geometry drops the bond.
+
+    This is the honest flip side of the panel above -- it is *not* a regression
+    but the expected behaviour, and it is why MolScope offers RDKit template
+    bonds for structures whose chemistry the geometry alone cannot carry.
+    """
+    coords, elements, truth = _embed("CCO")
+    # Find the C-O bond and stretch it well past any covalent + tolerance range.
+    o_idx = elements.index("O")
+    c_idx = next(
+        next(iter(bond - {o_idx})) for bond in truth
+        if o_idx in bond and elements[next(iter(bond - {o_idx}))] == "C"
+    )
+    bond_key = frozenset((c_idx, o_idx))
+    assert bond_key in truth                                  # RDKit keeps it
+
+    direction = coords[o_idx] - coords[c_idx]
+    stretched = coords.copy()
+    stretched[o_idx] = coords[c_idx] + direction / np.linalg.norm(direction) * 2.6
+    perceived = {
+        frozenset(map(int, p))
+        for p in ms.Molecule(stretched, elements).bonds(tolerance=1.2)
+    }
+    assert bond_key not in perceived                          # geometry drops it

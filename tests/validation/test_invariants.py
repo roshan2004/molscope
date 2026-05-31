@@ -107,3 +107,52 @@ def test_atom_contact_map_equals_brute_force():
     d = np.linalg.norm(ca.coords[:, None, :] - ca.coords[None, :, :], axis=-1)
     brute = ((d <= cutoff) & ~np.eye(len(ca), dtype=bool)).astype(float)
     assert np.array_equal(mat, brute)
+
+
+# -- ensemble alignment metrics ---------------------------------------------
+# Deterministic, controlled ensembles (no new data files) that complement the
+# MDAnalysis cross-check on the real 1aml ensemble: superposition must remove
+# rigid-body motion entirely and localise real per-atom variance.
+
+
+def _rigid_models(base, moves):
+    """A base structure plus rigid (rotation+translation) copies of it."""
+    models = [base]
+    for axis, angle, shift in moves:
+        models.append(base.rotate(axis=axis, angle_deg=angle).translate(shift))
+    return models
+
+
+def test_rmsf_of_a_rigidly_moving_ensemble_is_zero():
+    """Models that differ only by rigid motion have no internal fluctuation, so
+    after alignment every per-atom RMSF must collapse to zero."""
+    base = ms.read(PROTEIN).alpha_carbons()
+    models = _rigid_models(
+        base, [("z", 15.0, [1, 0, 0]), ("y", 40.0, [0, 2, -1]), ("x", 75.0, [-3, 1, 2])]
+    )
+    rmsf = ms.ensemble.rmsf(models)
+    assert np.allclose(rmsf, 0.0, atol=1e-5)
+
+
+def test_rmsd_matrix_of_a_rigidly_moving_ensemble_is_zero():
+    """Pairwise superposition of the same structure under rigid motion gives an
+    all-zero RMSD matrix (and an exactly zero diagonal)."""
+    base = ms.read(PROTEIN).alpha_carbons()
+    models = _rigid_models(base, [("x", 30.0, [5, -2, 1]), ("y", 60.0, [0, 3, 0])])
+    matrix = ms.ensemble.rmsd_matrix(models)
+    assert np.allclose(matrix, 0.0, atol=1e-5)
+    assert np.allclose(np.diag(matrix), 0.0)
+
+
+def test_rmsf_localises_a_single_displaced_atom():
+    """A single atom displaced by growing amounts across models must carry the
+    largest fluctuation; on a large structure alignment barely compensates."""
+    base = ms.read(PROTEIN).alpha_carbons()
+    target = len(base) // 2
+    models = [base]
+    for d in (0.5, 1.0, 1.5):
+        coords = base.coords.copy()
+        coords[target] += np.array([d, 0.0, 0.0])
+        models.append(ms.Molecule(coords, list(base.elements)))
+    rmsf = ms.ensemble.rmsf(models)
+    assert int(np.argmax(rmsf)) == target
