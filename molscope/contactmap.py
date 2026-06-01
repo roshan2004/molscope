@@ -35,12 +35,21 @@ class ContactMap:
     resids: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=int))
     icodes: list[str] = field(default_factory=list)
     residue_ids: list[ResidueId] = field(default_factory=list)
+    #: A difference map (``map_a - map_b``), set by :meth:`__sub__`. Tracked
+    #: explicitly rather than inferred from negative values, since a difference
+    #: where one state's contacts are a subset of the other has no negatives.
+    is_difference: bool = False
 
     @property
     def is_frequency(self) -> bool:
-        """True if the matrix holds fractional values (an ensemble map)."""
-        vals = np.unique(self.matrix)
-        return not np.all(np.isin(vals, (0.0, 1.0)))
+        """True if the matrix holds fractional values (an ensemble map).
+
+        For a difference map the discrete values are ``{-1, 0, 1}`` (boolean
+        inputs) and anything beyond that marks an ensemble-frequency difference;
+        for an ordinary map the discrete values are ``{0, 1}``.
+        """
+        allowed = (-1.0, 0.0, 1.0) if self.is_difference else (0.0, 1.0)
+        return not np.all(np.isin(np.unique(self.matrix), allowed))
 
     @property
     def n_contacts(self) -> int:
@@ -65,6 +74,45 @@ class ContactMap:
         from .plotting import plot_contact_map
 
         return plot_contact_map(self, **kwargs)
+
+    def __sub__(self, other: ContactMap) -> ContactMap:
+        """Return ``self - other`` as a difference map (requires matching maps).
+
+        Both maps must share the same level, shape, labels, and cutoff so that
+        cell ``(i, j)`` denotes the same residue/atom pair in each; otherwise a
+        :class:`ValueError` is raised. The result has ``is_difference=True`` with
+        entries in ``[-1, 1]`` (``+1`` gained in ``self``, ``-1`` lost).
+        """
+        if not isinstance(other, ContactMap):
+            return NotImplemented
+        if self.level != other.level:
+            raise ValueError(
+                "cannot subtract contact maps with different levels: "
+                f"{self.level} vs {other.level}"
+            )
+        if self.matrix.shape != other.matrix.shape:
+            raise ValueError(
+                "cannot subtract contact maps with different shapes: "
+                f"{self.matrix.shape} vs {other.matrix.shape}"
+            )
+        if self.labels != other.labels:
+            raise ValueError("cannot subtract contact maps with mismatched residue/atom labels")
+        if self.cutoff != other.cutoff:
+            raise ValueError(
+                "cannot subtract contact maps with different cutoffs: "
+                f"{self.cutoff} vs {other.cutoff}"
+            )
+
+        return ContactMap(
+            matrix=self.matrix - other.matrix,
+            level=self.level,
+            cutoff=self.cutoff,
+            labels=self.labels,
+            resids=self.resids,
+            icodes=self.icodes,
+            residue_ids=self.residue_ids,
+            is_difference=True,
+        )
 
 
 def contact_map(

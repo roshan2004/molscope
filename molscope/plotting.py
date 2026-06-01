@@ -261,11 +261,21 @@ def plot_contact_map(contact_map, ax=None, cmap=None, show: bool = True, label_t
 
     mat = contact_map.matrix
     freq = contact_map.is_frequency
+    is_diff = contact_map.is_difference
     if ax is None:
         _, ax = plt.subplots(figsize=(5, 4))
+
+    if is_diff:
+        v_max = float(np.abs(mat).max()) or 1.0
+        vmin, vmax = -v_max, v_max
+        plot_cmap = cmap or "bwr"
+    else:
+        vmin, vmax = 0.0, 1.0
+        plot_cmap = cmap or ("viridis" if freq else "Greys")
+
     im = ax.imshow(
-        mat, origin="lower", interpolation="nearest", vmin=0, vmax=1,
-        cmap=cmap or ("viridis" if freq else "Greys"),
+        mat, origin="lower", interpolation="nearest", vmin=vmin, vmax=vmax,
+        cmap=plot_cmap,
     )
 
     unit = "residue" if contact_map.level == "residue" else "atom"
@@ -278,9 +288,15 @@ def plot_contact_map(contact_map, ax=None, cmap=None, show: bool = True, label_t
     else:
         ax.set_xlabel(f"{unit} index")
         ax.set_ylabel(f"{unit} index")
-    label = "contact frequency" if freq else f"contact (< {contact_map.cutoff} Å)"
+
+    if is_diff:
+        label = "contact frequency difference" if freq else "contact difference"
+        ax.set_title(f"{unit} contact difference map ({contact_map.cutoff} Å)")
+    else:
+        label = "contact frequency" if freq else f"contact (< {contact_map.cutoff} Å)"
+        ax.set_title(f"{unit} contact map ({contact_map.cutoff} Å)")
+
     ax.figure.colorbar(im, ax=ax, label=label, fraction=0.046, pad=0.04)
-    ax.set_title(f"{unit} contact map ({contact_map.cutoff} Å)")
 
     if show:
         plt.show()

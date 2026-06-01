@@ -178,3 +178,131 @@ def test_plot_distance_matrix():
     matplotlib.use("Agg")
     ax = ca_chain().plot_distance_matrix(show=False)
     assert ax is not None
+
+
+def test_contact_map_difference():
+    mol = ca_chain()
+    map1 = mol.contact_map(cutoff=6.0, level="residue")
+    map2 = mol.contact_map(cutoff=8.0, level="residue")
+
+    mol2 = Molecule(
+        np.array([[0.0, 0, 0], [5.0, 0, 0], [10.0, 0, 0]]), ["C", "C", "C"],
+        atom_names=["CA", "CA", "CA"], resnames=["ALA", "ALA", "ALA"],
+        resids=np.array([1, 2, 3]), chains=["A", "A", "A"],
+    )
+    map3 = mol2.contact_map(cutoff=6.0, level="residue")
+
+    #ALA3 shifted in mol2 so residue 2-3 is in contact in map3 but not map1
+    diff = map1 - map3
+    assert isinstance(diff, ContactMap)
+    assert diff.cutoff == 6.0
+    assert diff.level == "residue"
+    assert diff.labels == ["A:ALA1", "A:ALA2", "A:ALA3"]
+    assert diff.matrix[1, 2] == -1.0
+    assert diff.matrix[0, 1] == 0.0
+    assert diff.is_difference
+    assert not diff.is_frequency
+
+    # Mismatch checks
+    with pytest.raises(ValueError, match="different cutoffs"):
+        _ = map1 - map2
+
+    atom_map = mol.contact_map(cutoff=6.0, level="atom")
+    with pytest.raises(ValueError, match="different levels"):
+        _ = map1 - atom_map
+
+    two_res = Molecule(
+        np.array([[0.0, 0, 0], [5.0, 0, 0]]), ["C", "C"],
+        atom_names=["CA", "CA"], resnames=["ALA", "ALA"],
+        resids=np.array([1, 2]), chains=["A", "A"],
+    )
+    map_two = two_res.contact_map(cutoff=6.0, level="residue")
+    with pytest.raises(ValueError, match="different shapes"):
+        _ = map1 - map_two
+
+    mol_diff_labels = Molecule(
+        np.array([[0.0, 0, 0], [5.0, 0, 0], [12.0, 0, 0]]), ["C", "C", "C"],
+        atom_names=["CA", "CA", "CA"], resnames=["ALA", "GLY", "ALA"],
+        resids=np.array([1, 2, 3]), chains=["A", "A", "A"],
+    )
+    map_diff_labels = mol_diff_labels.contact_map(cutoff=6.0, level="residue")
+    with pytest.raises(ValueError, match="mismatched residue/atom labels"):
+        _ = map1 - map_diff_labels
+
+    with pytest.raises(TypeError):
+        _ = map1 - 5
+
+
+def test_difference_flag_holds_without_negative_values():
+    # A "gained-only" difference (state B's contacts are a subset of A's) has no
+    # negative entries, and an identical-state difference is all zeros. Neither
+    # could be inferred from values, so is_difference is tracked explicitly.
+    bigger = ContactMap(
+        matrix=np.array([[0.0, 1.0, 1.0], [1.0, 0.0, 1.0], [1.0, 1.0, 0.0]]),
+        level="residue", cutoff=8.0, labels=["A:ALA1", "A:ALA2", "A:ALA3"],
+    )
+    smaller = ContactMap(
+        matrix=np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]),
+        level="residue", cutoff=8.0, labels=["A:ALA1", "A:ALA2", "A:ALA3"],
+    )
+
+    gained_only = bigger - smaller
+    assert not np.any(gained_only.matrix < 0)  # no lost contacts -> no negatives
+    assert gained_only.is_difference           # ...but still a difference map
+    assert not gained_only.is_frequency        # boolean inputs -> discrete diff
+
+    identical = bigger - bigger
+    assert not np.any(identical.matrix != 0)   # all zeros
+    assert identical.is_difference
+
+    # An ordinary map is never a difference.
+    assert bigger.is_difference is False
+
+
+def test_frequency_difference_map():
+    map_a = ContactMap(
+        matrix=np.array([[0.0, 0.8, 0.1], [0.8, 0.0, 0.4], [0.1, 0.4, 0.0]]),
+        level="residue",
+        cutoff=8.0,
+        labels=["A:ALA1", "A:ALA2", "A:ALA3"],
+    )
+    map_b = ContactMap(
+        matrix=np.array([[0.0, 0.2, 0.5], [0.2, 0.0, 0.4], [0.5, 0.4, 0.0]]),
+        level="residue",
+        cutoff=8.0,
+        labels=["A:ALA1", "A:ALA2", "A:ALA3"],
+    )
+
+    assert map_a.is_frequency
+    assert map_b.is_frequency
+
+    diff = map_a - map_b
+    assert diff.is_difference
+    assert diff.is_frequency
+    np.testing.assert_array_almost_equal(
+        diff.matrix,
+        np.array([[0.0, 0.6, -0.4], [0.6, 0.0, 0.0], [-0.4, 0.0, 0.0]]),
+    )
+
+
+def test_plot_contact_map_difference():
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+    map_a = ContactMap(
+        matrix=np.array([[0.0, 0.8, 0.1], [0.8, 0.0, 0.4], [0.1, 0.4, 0.0]]),
+        level="residue",
+        cutoff=8.0,
+        labels=["A:ALA1", "A:ALA2", "A:ALA3"],
+    )
+    map_b = ContactMap(
+        matrix=np.array([[0.0, 0.2, 0.5], [0.2, 0.0, 0.4], [0.5, 0.4, 0.0]]),
+        level="residue",
+        cutoff=8.0,
+        labels=["A:ALA1", "A:ALA2", "A:ALA3"],
+    )
+
+    diff = map_a - map_b
+    ax = diff.plot(show=False)
+    assert ax is not None
