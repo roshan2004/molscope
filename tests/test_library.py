@@ -12,6 +12,7 @@ import pytest
 from molscope.cli import main
 from molscope.library import (
     MoleculeTable,
+    protonate_smiles,
     read_table,
     select_diverse,
     smiles_descriptors,
@@ -276,3 +277,61 @@ def test_cli_select_summary_without_out(tmp_path, capsys):
     rc = main(["select", path, "--descriptor-cols", "MW", "ALogP", "-n", "2"])
     assert rc == 0
     assert "selected 2 of 5" in capsys.readouterr().out
+
+
+# -- pKa-aware SMILES protonation (Dimorphite-DL) ---------------------------
+
+def test_protonate_smiles_tracks_ph():
+    """Dimorphite-DL returns the dominant ionisation state at the target pH."""
+    pytest.importorskip("rdkit")
+    pytest.importorskip("dimorphite_dl")
+
+    acid, amine, arene = "CC(=O)O", "CCN", "c1ccccc1"
+    at74 = protonate_smiles([acid, amine, arene], ph=7.4)
+    assert at74[0] == "CC(=O)[O-]"   # carboxylic acid is deprotonated
+    assert at74[1] == "CC[NH3+]"     # amine is protonated
+    assert at74[2] == arene          # neutral arene is unchanged
+
+    # The acid stays neutral well below its pKa; the amine neutralises above its.
+    assert protonate_smiles([acid], ph=2.0)[0] == "CC(=O)O"
+    assert protonate_smiles([amine], ph=12.0)[0] == "CCN"
+
+
+def test_protonate_smiles_passes_through_blanks():
+    pytest.importorskip("rdkit")
+    pytest.importorskip("dimorphite_dl")
+    assert protonate_smiles(["", None, "   "], ph=7.0) == ["", "", "   "]
+
+
+def test_smiles_descriptors_pka_changes_charge_sensitive_values():
+    """Protonating before featurising shifts charge-sensitive descriptors."""
+    pytest.importorskip("rdkit")
+    pytest.importorskip("dimorphite_dl")
+
+    plain, _ = smiles_descriptors(["CC(=O)O"], names=["MolWt"])
+    pka, _ = smiles_descriptors(["CC(=O)O"], names=["MolWt"], protonation="pka", ph=7.4)
+    # Deprotonation removes one hydrogen (~1.008 Da).
+    assert plain[0, 0] - pka[0, 0] == pytest.approx(1.008, abs=0.01)
+
+
+def test_smiles_descriptors_rejects_bad_protonation():
+    pytest.importorskip("rdkit")
+    with pytest.raises(ValueError, match="protonation"):
+        smiles_descriptors(["CCO"], protonation="basic")
+
+
+def test_require_dimorphite_install_hint(monkeypatch):
+    import builtins
+
+    from molscope.library import _require_dimorphite
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "dimorphite_dl":
+            raise ImportError("no dimorphite")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(ImportError, match=r"molscope\[dimorphite\]"):
+        _require_dimorphite()

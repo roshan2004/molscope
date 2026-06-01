@@ -11,6 +11,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- pKa-aware, environment-aware protonation. For proteins, ``protonation="pka"``
+  (on ``read``/``read_pdb``/``fetch`` with ``bond_perception="template"``, and
+  the ``chemical_features`` MCP tool) runs PROPKA to predict per-residue pKa from
+  the structure and assigns side-chain and terminus charges for the dominant
+  state at a chosen ``ph`` (default 7.0) — unlike the fixed ``"standard"`` table.
+  For small molecules, ``prepare_dataset`` / ``smiles_descriptors`` /
+  ``molscope prepare`` gain ``protonation="pka"`` + ``ph`` (and ``--protonation``
+  / ``--ph`` on the CLI), which set each SMILES to its dominant ionisation state
+  at the target pH (via Dimorphite-DL) before descriptors and fingerprints are
+  computed; the stored SMILES and dedup keys are left untouched. New optional
+  extras ``[propka]``, ``[dimorphite]``, and the umbrella ``[pka]``; each backend
+  raises a clear install hint when absent.
+
 - Streaming SDF readers for large docking files: ``stream_sdf_frames`` and
   ``molscope.docking.stream_poses`` / ``PoseStream`` yield records one at a time,
   keeping memory O(1) in the number of poses. ``ms.stream(...)`` now dispatches to

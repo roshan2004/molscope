@@ -59,6 +59,68 @@ def test_pdb_template_bonds_rejects_bad_protonation():
         pdb_template_bonds(path, ms.read(path), protonation="ph9")
 
 
+def test_pka_formal_charge_decision():
+    """Pure pKa-vs-pH charge logic (no PROPKA needed)."""
+    from molscope.chem import _pka_formal_charge
+
+    # Acid: deprotonated (-1) only when the solution is more basic than its pKa.
+    assert _pka_formal_charge("acid", 3.9, 7.0) == -1
+    assert _pka_formal_charge("acid", 9.0, 7.0) == 0
+    # Base: protonated (+1) only when the solution is more acidic than its pKa.
+    assert _pka_formal_charge("base", 10.5, 7.0) == 1
+    assert _pka_formal_charge("base", 6.0, 7.0) == 0
+    # At pH == pKa the uncharged species is reported.
+    assert _pka_formal_charge("acid", 7.0, 7.0) == 0
+    assert _pka_formal_charge("base", 7.0, 7.0) == 0
+    with pytest.raises(ValueError):
+        _pka_formal_charge("amphoteric", 7.0, 7.0)
+
+
+def test_pka_protonation_tracks_ph():
+    """PROPKA-predicted charges are near-neutral at pH 7 and swing with pH."""
+    pytest.importorskip("rdkit")
+    pytest.importorskip("propka")
+    path = os.path.join(DATA, "1ubq.pdb")
+
+    at7 = ms.read(path, bond_perception="template", protonation="pka", ph=7.0)
+    acidic = ms.read(path, bond_perception="template", protonation="pka", ph=2.0)
+    basic = ms.read(path, bond_perception="template", protonation="pka", ph=12.0)
+
+    # Charges are actually assigned, and ubiquitin is ~neutral at pH 7.
+    assert int((at7.formal_charges != 0).sum()) > 0
+    assert abs(int(at7.formal_charges.sum())) <= 1
+    # Low pH protonates (more positive) than high pH (more negative).
+    assert int(acidic.formal_charges.sum()) > int(basic.formal_charges.sum())
+    assert int(acidic.formal_charges.sum()) > 0 > int(basic.formal_charges.sum())
+    # The assigned charges still sanitise in RDKit.
+    assert at7.chemical_features().formal_charges.sum() == at7.formal_charges.sum()
+
+
+def test_pka_protonation_requires_template_bonds():
+    pytest.importorskip("rdkit")
+    path = os.path.join(DATA, "1ubq.pdb")
+    with pytest.raises(ValueError, match="template"):
+        ms.read(path, protonation="pka")
+
+
+def test_require_propka_install_hint(monkeypatch):
+    """A missing PROPKA yields the documented install hint, not an opaque error."""
+    import builtins
+
+    from molscope.chem import _require_propka
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "propka.run" or name.startswith("propka"):
+            raise ImportError("no propka")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(ImportError, match=r"molscope\[propka\]"):
+        _require_propka()
+
+
 def test_chemical_features_require_rdkit():
     pytest.importorskip("rdkit")
     mol = Molecule(

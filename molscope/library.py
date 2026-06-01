@@ -110,21 +110,103 @@ def read_table(path: str, *, sheet: Optional[str] = None) -> MoleculeTable:
     )
 
 
+def _require_dimorphite():
+    """Return a ``protonate(smiles, ph) -> list[str]`` adapter over Dimorphite-DL.
+
+    Dimorphite-DL's public API changed between its 1.2 (``DimorphiteDL`` class)
+    and 1.3 (``protonate_smiles`` function) lines; this hides that behind one
+    callable and raises a clear install hint when the package is absent. The
+    adapter requests a single dominant microspecies (``max_variants=1``) at the
+    target pH (``min_ph == max_ph``). A zero pKa-precision window is used so each
+    site makes a hard pKa-vs-pH decision and the *dominant* state is returned;
+    with a non-zero window Dimorphite-DL enumerates both states near a pKa and the
+    single kept variant need not be the dominant one.
+    """
+    try:
+        import dimorphite_dl as _dd
+    except ImportError as exc:  # pragma: no cover - exercised only when missing
+        raise ImportError(
+            "Dimorphite-DL is required for pKa-aware SMILES protonation; install "
+            'it with pip install "molscope[dimorphite]"'
+        ) from exc
+
+    if hasattr(_dd, "DimorphiteDL"):  # 1.2.x class API
+        engine = _dd.DimorphiteDL(
+            min_ph=0.0, max_ph=0.0, max_variants=1, pka_precision=0.0, silent=True
+        )
+
+        def protonate(smiles: str, ph: float) -> list:
+            engine.min_ph = engine.max_ph = float(ph)
+            return list(engine.protonate(str(smiles)))
+
+        return protonate
+
+    if hasattr(_dd, "protonate_smiles"):  # 1.3+/2.x function API
+        def protonate(smiles: str, ph: float) -> list:
+            out = _dd.protonate_smiles(
+                str(smiles), ph_min=float(ph), ph_max=float(ph),
+                precision=0.0, max_variants=1,
+            )
+            return [str(s) for s in out]
+
+        return protonate
+
+    raise ImportError(  # pragma: no cover - guards an unrecognised future release
+        "installed Dimorphite-DL exposes neither 'DimorphiteDL' nor "
+        "'protonate_smiles'; pin pip install 'molscope[dimorphite]'"
+    )
+
+
+def protonate_smiles(smiles: list, ph: float = 7.0) -> list:
+    """Return the dominant ionisation state of each SMILES at ``ph``.
+
+    Uses Dimorphite-DL (``pip install "molscope[dimorphite]"``) to enumerate the
+    protonation state most populated at the target pH. Each input maps to one
+    output SMILES; empty inputs and strings Dimorphite-DL cannot protonate are
+    passed through unchanged so the list stays index-aligned with the input.
+    """
+    protonate = _require_dimorphite()
+    result = []
+    for smi in smiles:
+        text = "" if smi is None else str(smi)
+        if not text.strip():
+            result.append(text)
+            continue
+        try:
+            variants = protonate(text, ph)
+        except Exception:  # pragma: no cover - defensive: malformed SMILES
+            variants = []
+        result.append(variants[0] if variants else text)
+    return result
+
+
 def smiles_descriptors(
-    smiles: list, names: Optional[list[str]] = None
+    smiles: list, names: Optional[list[str]] = None,
+    *, protonation: str = "none", ph: float = 7.0,
 ) -> tuple[np.ndarray, list[str]]:
     """Compute RDKit descriptors for a list of SMILES strings.
 
     Returns ``(matrix, names)`` where ``matrix`` is ``(len(smiles), len(names))``.
     Unparseable or empty SMILES yield a row of ``NaN`` rather than an error.
     Needs RDKit (``pip install "molscope[chem]"``).
+
+    With ``protonation="pka"`` each SMILES is first set to its dominant ionisation
+    state at ``ph`` via Dimorphite-DL (``pip install "molscope[dimorphite]"``)
+    before descriptors are computed, so charge-sensitive descriptors reflect the
+    physiological (or chosen-pH) species rather than the as-written form.
     """
+    if protonation not in ("none", "pka"):
+        raise ValueError("protonation must be 'none' or 'pka'")
+
     from rdkit import RDLogger
 
     from .chem import _require_rdkit
 
     Chem, _ = _require_rdkit()
     from rdkit.Chem import Descriptors
+
+    if protonation == "pka":
+        smiles = protonate_smiles(smiles, ph=ph)
 
     selected = list(names) if names else list(DEFAULT_SMILES_DESCRIPTORS)
     desc_map = dict(Descriptors._descList)
