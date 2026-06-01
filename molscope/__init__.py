@@ -91,7 +91,9 @@ from .io import (
     stream,
     stream_pdb_models,
     stream_xyz_frames,
+    write_cif,
     write_pdb,
+    write_sdf,
     write_xyz,
 )
 from .molecule import Molecule, ResidueGroup, ResidueId, UnitCell
@@ -177,7 +179,9 @@ __all__ = [
     "write_cg_index",
     "write_cg_mapping",
     "write_cg_openmm_xml",
+    "write_cif",
     "write_pdb",
+    "write_sdf",
     "write_xyz",
 ]
 __version__ = "0.11.0"
