@@ -1467,6 +1467,19 @@ wheels = [
 ]
 
 [[package]]
+name = "dimorphite-dl"
+version = "2.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "loguru", marker = "python_full_version >= '3.10'" },
+    { name = "rdkit", version = "2025.9.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/a6/96dc4c9277d5fd656740950ca4421db6109f46a3800d6151b78152a9a3e0/dimorphite_dl-2.0.2.tar.gz", hash = "sha256:fa042935312c9681203a3b0f3df04252eb1d17f73cd71c8e7d8ed248380fae9c", size = 140668, upload-time = "2025-08-11T17:37:22.652Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/f9/d721ee039c5d070efbf67696b01aaa84b431b82c7a7e57504f2c1f46ced2/dimorphite_dl-2.0.2-py3-none-any.whl", hash = "sha256:44125dfe2a5e1a37239f61914428d7f51d8fa61ec701a1337e71c293514133a8", size = 39888, upload-time = "2025-08-11T17:37:21.388Z" },
+]
+
+[[package]]
 name = "et-xmlfile"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2885,6 +2898,19 @@ wheels = [
 ]
 
 [[package]]
+name = "loguru"
+version = "0.7.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "python_full_version >= '3.10' and sys_platform == 'win32'" },
+    { name = "win32-setctime", marker = "python_full_version >= '3.10' and sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/05/a1dae3dffd1116099471c643b8924f5aa6524411dc6c63fdae648c4f1aca/loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6", size = 63559, upload-time = "2024-12-06T11:20:56.608Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c", size = 61595, upload-time = "2024-12-06T11:20:54.538Z" },
+]
+
+[[package]]
 name = "markdown"
 version = "3.9"
 source = { registry = "https://pypi.org/simple" }
@@ -3458,7 +3484,8 @@ dependencies = [
 
 [package.optional-dependencies]
 chem = [
-    { name = "rdkit" },
+    { name = "rdkit", version = "2025.9.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "rdkit", version = "2026.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
 ]
 cif = [
     { name = "gemmi" },
@@ -3467,6 +3494,9 @@ dgl = [
     { name = "dgl" },
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+dimorphite = [
+    { name = "dimorphite-dl", marker = "python_full_version >= '3.10'" },
 ]
 fast = [
     { name = "scipy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -3496,6 +3526,13 @@ mcp = [
     { name = "mcp", marker = "python_full_version >= '3.10'" },
     { name = "pydantic", marker = "python_full_version >= '3.10'" },
 ]
+pka = [
+    { name = "dimorphite-dl", marker = "python_full_version >= '3.10'" },
+    { name = "propka" },
+]
+propka = [
+    { name = "propka" },
+]
 pyg = [
     { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -3511,7 +3548,8 @@ validation = [
     { name = "mdanalysis", version = "2.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "mdanalysis", version = "2.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "mdanalysis", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "rdkit" },
+    { name = "rdkit", version = "2025.9.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "rdkit", version = "2026.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
 ]
 viz = [
     { name = "py3dmol" },
@@ -3522,11 +3560,13 @@ xlsx = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "dimorphite-dl", marker = "python_full_version >= '3.10'" },
     { name = "mcp", marker = "python_full_version >= '3.10'" },
     { name = "networkx", version = "3.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "openpyxl" },
+    { name = "propka" },
     { name = "py3dmol" },
     { name = "pydantic", marker = "python_full_version >= '3.10'" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -3551,6 +3591,8 @@ notebook = [
 requires-dist = [
     { name = "dgl", marker = "extra == 'dgl'", specifier = ">=1.1" },
     { name = "dgl", marker = "extra == 'gnn'", specifier = ">=1.1" },
+    { name = "dimorphite-dl", marker = "python_full_version >= '3.10' and extra == 'dimorphite'", specifier = ">=2.0" },
+    { name = "dimorphite-dl", marker = "python_full_version >= '3.10' and extra == 'pka'", specifier = ">=2.0" },
     { name = "gemmi", marker = "extra == 'cif'", specifier = ">=0.7" },
     { name = "matplotlib", specifier = ">=3.5" },
     { name = "mcp", marker = "python_full_version >= '3.10' and extra == 'mcp'", specifier = ">=1.2" },
@@ -3559,6 +3601,8 @@ requires-dist = [
     { name = "networkx", marker = "extra == 'graph'", specifier = ">=2.6" },
     { name = "numpy", specifier = ">=1.21" },
     { name = "openpyxl", marker = "extra == 'xlsx'", specifier = ">=3.1" },
+    { name = "propka", marker = "extra == 'pka'", specifier = ">=3.5" },
+    { name = "propka", marker = "extra == 'propka'", specifier = ">=3.5" },
     { name = "py3dmol", marker = "extra == 'viz'", specifier = ">=2.0" },
     { name = "pydantic", marker = "python_full_version >= '3.10' and extra == 'mcp'", specifier = ">=2.11" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
@@ -3573,13 +3617,15 @@ requires-dist = [
     { name = "torch-geometric", marker = "extra == 'gnn'", specifier = ">=2.3" },
     { name = "torch-geometric", marker = "extra == 'pyg'", specifier = ">=2.3" },
 ]
-provides-extras = ["test", "fast", "viz", "graph", "chem", "cif", "xlsx", "gpu", "mcp", "validation", "pyg", "dgl", "gnn"]
+provides-extras = ["test", "fast", "viz", "graph", "chem", "cif", "xlsx", "propka", "dimorphite", "pka", "gpu", "mcp", "validation", "pyg", "dgl", "gnn"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "dimorphite-dl", marker = "python_full_version >= '3.10'", specifier = ">=2.0" },
     { name = "mcp", marker = "python_full_version >= '3.10'", specifier = ">=1.2" },
     { name = "networkx", specifier = ">=2.6" },
     { name = "openpyxl", specifier = ">=3.1" },
+    { name = "propka", specifier = ">=3.5" },
     { name = "py3dmol", specifier = ">=2.0" },
     { name = "pydantic", marker = "python_full_version >= '3.10'", specifier = ">=2.11" },
     { name = "pytest", specifier = ">=7" },
@@ -5240,6 +5286,15 @@ wheels = [
 ]
 
 [[package]]
+name = "propka"
+version = "3.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/76/6e/b409bfd37fbbcbaf41e485d2c6117027394cee12b7d6128b4e01b29c4843/propka-3.5.1.tar.gz", hash = "sha256:d8083b58d8c4c553ff8704c706190fe37ff82253adcd6e53b31d8ad7d6d52257", size = 111363, upload-time = "2024-01-02T02:35:18.012Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/0e/5f70ba04fd85495afb0808654a09abfbede4414dd33e3b711c9023e2a993/propka-3.5.1-py3-none-any.whl", hash = "sha256:2df2d81adc9205113a0e6f9d96b06b46e29716bc3a71223075dd396e0eefdfc3", size = 104123, upload-time = "2024-01-02T02:35:16.174Z" },
+]
+
+[[package]]
 name = "psutil"
 version = "7.2.2"
 source = { registry = "https://pypi.org/simple" }
@@ -5891,14 +5946,55 @@ wheels = [
 
 [[package]]
 name = "rdkit"
-version = "2026.3.2"
+version = "2025.9.6"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.11' and python_full_version < '3.14' and sys_platform == 'win32'",
+    "python_full_version >= '3.11' and python_full_version < '3.14' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.11' and python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.10.*'",
+]
 dependencies = [
-    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pillow", version = "11.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pillow", version = "12.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/cd/864924bb0606c8d90869f1f460f7a5b6911e98d67d56ad404b5eab1852b3/rdkit-2025.9.6-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:ce558b4f8e63a52ec932b59e867a8e1b2e3cde304e17b652cd54e4f73a6f5607", size = 29513135, upload-time = "2026-03-02T18:08:24.822Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/9d/3d4d367e5ad6c995d043adc6382ea82480b1b8b4aba2c6a730ddd5d21abf/rdkit-2025.9.6-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:5aedf8a713998553e17b75a09990561a7824a542c85b48987d9bc88dbd1329f0", size = 35244087, upload-time = "2026-03-02T18:08:29.612Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/ba/761a33df54a935a20d5ee85e6a9c6334f509a2d4e1b1fcb7d382ab731835/rdkit-2025.9.6-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:6d6746cea16ce048259bf463a5beef92cf130fd0f8f62a999d4eb28384e7831a", size = 36730482, upload-time = "2026-03-02T18:08:33.683Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/1d/1851932f47b08bc203c373e4102b552ed031eaf596444a5a98eff5f67a83/rdkit-2025.9.6-cp310-cp310-win_amd64.whl", hash = "sha256:a961a99f91f1d4366d8eaf53e0648c36e3f6dd96a040be9fc6b90b4a7133dae8", size = 24297586, upload-time = "2026-03-02T18:08:37.728Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/fa/61735db51afc02c2c6d1d203dc5b0ddade8bb951fe72672f463cd111a77b/rdkit-2025.9.6-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:8348ec9c5a223d94fa848f8330a68f746d870f61540a846fe8ea356998ea77f1", size = 29513218, upload-time = "2026-03-02T18:08:41.492Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/fa/5d5919b3ef2f7f99419de3d5075977594cacf97effb60ca7000450372084/rdkit-2025.9.6-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:d0ec921fee7f2908e1da8c4ea1185dbb6d0a22787bcf9749b442691c121c02ef", size = 35239409, upload-time = "2026-03-02T18:08:45.413Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/e4/0c4656224167261093d057d018acb8b9ddbad22f3ebe3706424e23ef7b6b/rdkit-2025.9.6-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:3f4fc084890efb29b51ea4679bb07d28b276b6e73e3381e678a5ba057b4c4222", size = 36729354, upload-time = "2026-03-02T18:08:50.948Z" },
+    { url = "https://files.pythonhosted.org/packages/51/6d/137748016222aee73e0d97b515838ee38dc5ed62f528e892c7d424994a09/rdkit-2025.9.6-cp311-cp311-win_amd64.whl", hash = "sha256:8c8e592948f442d2ec5a34f2e31295e03778686cec459a3d23c41b46ac56a358", size = 24297670, upload-time = "2026-03-02T18:08:55.013Z" },
+    { url = "https://files.pythonhosted.org/packages/43/3c/599c81d456ab2eb3e8d6af1f2f8275689eec3a7c836c3ca6e4c75fb98607/rdkit-2025.9.6-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:95350eeb5d70c5576eca748caf59106ebeea259278ff05c3812adb12c5c4dc10", size = 29558443, upload-time = "2026-03-02T18:08:58.506Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/5f/54a2d040d5ec2f21182da61d67145dd6b0cc3abf2db6737368b8bb3883ef/rdkit-2025.9.6-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:7e8cda5243d586356c2a66bdf70fea3cb3fd552200556efe375da64efb047f73", size = 35119461, upload-time = "2026-03-02T18:09:03.765Z" },
+    { url = "https://files.pythonhosted.org/packages/43/8c/42dde9df1a665e3589eeeaea463b11ec89c9d0c0e82db22d8128e3e14490/rdkit-2025.9.6-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:6be95b735c428ba27badf39e92078133d3a505f872d0a31467ba577d73c57676", size = 36664387, upload-time = "2026-03-02T18:09:08.01Z" },
+    { url = "https://files.pythonhosted.org/packages/27/45/69077326d9969bbf7958b7f6ef03a3111de83ddf8800d5c7dc390041bf36/rdkit-2025.9.6-cp312-cp312-win_amd64.whl", hash = "sha256:80c1fe3d1cc88540f2495272f32f02b4ec58a73db53649c9e4249087deeb62dc", size = 24315769, upload-time = "2026-03-02T18:09:11.987Z" },
+    { url = "https://files.pythonhosted.org/packages/da/e2/33d8be4da529d9367a52b39c5f1c134070942ae56b35aa67e97f6b509b47/rdkit-2025.9.6-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:0dee75188cae572bc2cf5b580291af0f3dc36ca6bb3f7c2a395b04450507efb0", size = 29557397, upload-time = "2026-03-02T18:09:15.392Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/f8/5f6a5cda796b696aaea1b511bec5e828e5f4e7cdfc7eee56c8fcff49f8d3/rdkit-2025.9.6-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:fedb677e69e581dae2564b205418a22d1960e816a15378bf0ab358ed9ca2f477", size = 35118517, upload-time = "2026-03-02T18:09:19.593Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/19/72b938ea5fdcdb189b560532a47208c0b1421061d387820b487d7fae97f6/rdkit-2025.9.6-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:81023b0c9a138f0210716047ab02e4817c28d6505dc04bee783553282da06944", size = 36663055, upload-time = "2026-03-02T18:09:23.765Z" },
+    { url = "https://files.pythonhosted.org/packages/13/89/116087b0a854ad951e36ee0e75b9f6da4a6b03826fb8607b8485bc49211d/rdkit-2025.9.6-cp313-cp313-win_amd64.whl", hash = "sha256:95572cd31ae6f57b9c77a25e904564bc4b973d0776614e65d89f22e0183552fd", size = 24314813, upload-time = "2026-03-02T18:09:27.54Z" },
+    { url = "https://files.pythonhosted.org/packages/35/fa/11378b7f7b916b681d4812b868aad8f293d60c6a9f6c2596a9ea85ed0a89/rdkit-2025.9.6-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:8710d903c4a83a6db2f0423f81d031a0a12c6c500d1482268e9ff86f87f5b07c", size = 29573154, upload-time = "2026-03-02T18:09:31.072Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/a0/959cb16214e2924e9cb74176038d07cd67ff12a969c31f2a40f650ae75b9/rdkit-2025.9.6-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:e90b33e5b44517b4f37d39aa2cc2780837cea6457fe23ef872a16235c81e91c8", size = 35153451, upload-time = "2026-03-02T18:09:35.283Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/c9/faa051848450109c83d29c7b1d5871deea4a33aacbb8bacccb7b0e5460b8/rdkit-2025.9.6-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:97fa110972724cb465714395b001518ca4aef0d7f5b42848c26d77127d16aeab", size = 36675017, upload-time = "2026-03-02T18:09:39.534Z" },
+    { url = "https://files.pythonhosted.org/packages/61/a9/f5e4da805370cc2c263631303ba9b32f956b2b56c0ccbcfbac641eb4d3c3/rdkit-2025.9.6-cp314-cp314-win_amd64.whl", hash = "sha256:7448bc1498aff93a372728916546702994feb26838c8ce34bfc415ca552d2023", size = 24793545, upload-time = "2026-03-02T18:09:43.551Z" },
+]
+
+[[package]]
+name = "rdkit"
+version = "2026.3.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.10'",
+]
+dependencies = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "pillow", version = "11.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/c1/12682c5c1c5d31bf528d820b0514478e31c1b090eeda18ed0b17d581c984/rdkit-2026.3.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:9b8d2ad85a8270eb3cef1a26db18cc6cd144ddb21c5f0c35d0b5229270aeb089", size = 29940520, upload-time = "2026-05-16T11:46:21.955Z" },
@@ -7179,6 +7275,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/2c/41/aa4bf9664e4cda14c3b39865b12251e8e7d239f4cd0e3cc1b6c2ccde25c1/websocket_client-1.9.0.tar.gz", hash = "sha256:9e813624b6eb619999a97dc7958469217c3176312b3a16a4bd1bc7e08a46ec98", size = 70576, upload-time = "2025-10-07T21:16:36.495Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/34/db/b10e48aa8fff7407e67470363eac595018441cf32d5e1001567a7aeba5d2/websocket_client-1.9.0-py3-none-any.whl", hash = "sha256:af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef", size = 82616, upload-time = "2025-10-07T21:16:34.951Z" },
+]
+
+[[package]]
+name = "win32-setctime"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload-time = "2024-12-07T15:28:28.314Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload-time = "2024-12-07T15:28:26.465Z" },
 ]
 
 [[package]]
