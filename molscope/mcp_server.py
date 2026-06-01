@@ -651,6 +651,35 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             indent=2,
         )
 
+    @server.tool(title="Prepare / QC structure", annotations=READ_NET)
+    @_friendly_errors
+    def prepare_structure(
+        source: str, protonation: str = "standard", ph: float = 7.4,
+    ) -> str:
+        """Check whether a structure is ML-ready and summarise what to fix.
+
+        ``source`` is a path to a ``.pdb``/``.cif``/``.xyz``/``.sdf`` file or a
+        4-character RCSB PDB id (downloaded and cached). Returns JSON with an
+        ``ml_ready`` verdict plus blockers and warnings: non-standard residues, a
+        ligand/water inventory, residue-numbering gaps, backbone chain breaks,
+        residues missing backbone atoms or with truncated side chains, whether
+        hydrogens are present, alternate conformations / partial occupancies, and
+        the net formal charge. ``protonation`` controls the net charge
+        (``"standard"`` pH-7 table, ``"pka"`` PROPKA at ``ph`` (``propka`` extra),
+        or ``"none"``); it needs RDKit for protein PDBs and degrades to a null
+        charge with a note otherwise. The ``ml_ready`` verdict is a heuristic
+        (missing backbone atoms and chain breaks are blockers).
+        """
+        from .structure_prep import prepare_structure as _prepare
+
+        token = source.strip()
+        if not os.path.exists(source) and len(token) == 4 and token.isalnum():
+            from .io import fetch_file
+
+            source = fetch_file(token, fmt="pdb")
+        report = _prepare(source, protonation=protonation, ph=ph)
+        return json.dumps(report.to_dict(), indent=2, default=_jsonable)
+
     @server.tool(title="Select diverse subset", annotations=READ_LOCAL)
     @_friendly_errors
     def select_diverse(

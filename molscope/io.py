@@ -70,6 +70,17 @@ def fetch(
     ``bond_perception="template"`` attaches RDKit residue-template bonds and
     needs ``fmt="pdb"`` (see :func:`read_pdb`).
     """
+    dest = fetch_file(pdb_id, fmt=fmt, cache_dir=cache_dir)
+    return read(dest, bond_perception=bond_perception, protonation=protonation, ph=ph)
+
+
+def fetch_file(pdb_id: str, fmt: str = "pdb", cache_dir: Optional[str] = None) -> str:
+    """Download a structure from RCSB by id and return the local cached path.
+
+    Like :func:`fetch` but stops at the file: callers that need a *path* (e.g.
+    structure QC or template-bond perception, which read the raw file) use this
+    instead of a parsed :class:`Molecule`. Cached so repeat calls don't refetch.
+    """
     fmt = fmt.lower()
     if fmt not in ("pdb", "cif"):
         raise ValueError("fmt must be 'pdb' or 'cif'")
@@ -92,7 +103,7 @@ def fetch(
             raise ValueError(f"could not reach RCSB to download {url}: {exc.reason}") from exc
         with open(dest, "wb") as fh:
             fh.write(data)
-    return read(dest, bond_perception=bond_perception, protonation=protonation, ph=ph)
+    return dest
 
 
 def read_smiles(smiles: str, *, name: Optional[str] = None, add_hs: bool = True,

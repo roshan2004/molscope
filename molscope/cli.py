@@ -354,6 +354,24 @@ def main(argv=None) -> int:
     )
     dock_report_parser.set_defaults(higher=None, clusters=True, best_pose=True)
 
+    # -- STRUCTURE-REPORT subcommand ---------------------------------------
+    qc_parser = subparsers.add_parser(
+        "structure-report",
+        help="check whether a structure is ML-ready (gaps, missing atoms, charge, ...)",
+    )
+    src = qc_parser.add_mutually_exclusive_group(required=True)
+    src.add_argument("file", nargs="?", help="path to a structure file")
+    src.add_argument("--fetch", metavar="PDBID", help="download from RCSB by id")
+    qc_parser.add_argument(
+        "--protonation", choices=["none", "standard", "pka"], default="standard",
+        help="net-charge model (pka needs PROPKA; default: standard)",
+    )
+    qc_parser.add_argument("--ph", type=float, default=7.4, help="pH for --protonation pka")
+    qc_parser.add_argument("--json", action="store_true", help="print the full JSON report")
+    qc_parser.add_argument(
+        "--out", "-o", metavar="PATH", help="write a Markdown report to PATH",
+    )
+
     # Default to 'view' if no subcommand provided
     if argv is None:
         argv = sys.argv[1:]
@@ -381,6 +399,8 @@ def main(argv=None) -> int:
         return _run_dock_rank(args)
     if args.command == "dock-report":
         return _run_dock_report(args)
+    if args.command == "structure-report":
+        return _run_structure_report(args)
 
     return 0
 
@@ -535,6 +555,39 @@ def _run_prepare(args: argparse.Namespace) -> int:
     if dataset.n_duplicates:
         print(f"removed {dataset.n_duplicates} duplicate(s) ({args.dedup})")
     print(f"wrote {len(written)} files to {args.out_dir}/")
+    return 0
+
+
+def _run_structure_report(args: argparse.Namespace) -> int:
+    from .structure_prep import prepare_structure
+
+    try:
+        if args.fetch:
+            from .io import fetch_file
+
+            source = fetch_file(args.fetch)
+        else:
+            source = args.file
+        report = prepare_structure(source, protonation=args.protonation, ph=args.ph)
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"structure-report failed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        import json
+
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(report.summary())
+
+    if args.out:
+        try:
+            with open(args.out, "w", encoding="utf-8") as handle:
+                handle.write(report.report_markdown())
+        except OSError as exc:
+            print(f"could not write {args.out}: {exc}", file=sys.stderr)
+            return 2
+        print(f"wrote {args.out}")
     return 0
 
 
