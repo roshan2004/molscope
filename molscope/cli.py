@@ -191,6 +191,14 @@ def main(argv=None) -> int:
         help="add a Morgan fingerprint column (needs RDKit)",
     )
     prepare_parser.add_argument(
+        "--protonation", choices=["none", "pka"], default="none",
+        help="pKa-aware protonation of SMILES before featurising (pka needs Dimorphite-DL)",
+    )
+    prepare_parser.add_argument(
+        "--ph", type=float, default=7.0,
+        help="target pH for --protonation pka (default: 7.0)",
+    )
+    prepare_parser.add_argument(
         "--no-standardize", dest="standardize", action="store_false",
         help="diversity split on raw descriptors instead of z-scored ones",
     )
@@ -505,6 +513,8 @@ def _run_prepare(args: argparse.Namespace) -> int:
             standardize=args.standardize,
             dedup=args.dedup,
             fingerprints=args.fingerprints,
+            protonation=args.protonation,
+            ph=args.ph,
         )
     except (OSError, ValueError, KeyError, ImportError) as exc:
         print(f"prepare failed: {exc}", file=sys.stderr)

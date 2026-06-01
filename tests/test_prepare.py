@@ -257,3 +257,53 @@ def test_prepare_reads_sdf(tmp_path):
     assert ds.smiles_col == "smiles"
     assert ds.n_input == 3
     assert "smiles" in ds.table.columns
+
+
+# -- pKa-aware protonation before featurising (Dimorphite-DL) ---------------
+
+def test_prepare_pka_protonation_changes_descriptors_and_manifest(tmp_path):
+    pytest.importorskip("rdkit")
+    pytest.importorskip("dimorphite_dl")
+    rows = [
+        {"ID": "acetic", "SMILES": "CC(=O)O"},
+        {"ID": "ethylamine", "SMILES": "CCN"},
+    ]
+    path = _write_csv(tmp_path / "smi.csv", rows, ["ID", "SMILES"])
+
+    plain = prepare_dataset(
+        path, smiles_col="SMILES", compute_descriptors=True,
+        rdkit_descriptors=["MolWt"], split="random", test=0.0, val=0.0,
+    )
+    pka = prepare_dataset(
+        path, smiles_col="SMILES", compute_descriptors=True,
+        rdkit_descriptors=["MolWt"], split="random", test=0.0, val=0.0,
+        protonation="pka", ph=7.4,
+    )
+
+    # The deprotonated acid weighs ~1 Da less than its neutral form.
+    plain_mw = plain.table.numeric_matrix(["MolWt"])[0, 0]
+    pka_mw = pka.table.numeric_matrix(["MolWt"])[0, 0]
+    assert plain_mw - pka_mw == pytest.approx(1.008, abs=0.01)
+
+    # The stored SMILES column is left on the original input SMILES.
+    assert pka.table.column("SMILES")[0] == "CC(=O)O"
+
+    manifest = pka.manifest()
+    assert manifest["protonation"] == "pka"
+    assert manifest["ph"] == 7.4
+    assert plain.manifest()["ph"] is None
+
+
+def test_prepare_pka_without_smiles_col_errors(tmp_path):
+    path = _write_csv(tmp_path / "lib.csv", LIB_ROWS, LIB_COLS)
+    with pytest.raises(ValueError, match="smiles_col"):
+        prepare_dataset(
+            path, compute_descriptors=False, descriptor_cols=["MW"],
+            split="diversity", protonation="pka", fingerprints=True,
+        )
+
+
+def test_prepare_rejects_bad_protonation(tmp_path):
+    path = _write_csv(tmp_path / "lib.csv", LIB_ROWS, LIB_COLS)
+    with pytest.raises(ValueError, match="protonation"):
+        prepare_dataset(path, split="random", protonation="acidic")

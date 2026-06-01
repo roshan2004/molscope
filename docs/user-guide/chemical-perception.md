@@ -73,7 +73,31 @@ mol.chemical_features().formal_charges.sum()   # e.g. +6 for trypsin
 
 The fixed assignment is aspartate/glutamate `-1`, lysine/arginine `+1`,
 histidine neutral, and termini uncharged (see `molscope.chem.STANDARD_PROTONATION`).
-It is a textbook model, **not** a pKa- or environment-aware prediction: it ignores
-local pKa shifts, buried or metal-coordinating residues, and termini. For
-accurate protonation use a dedicated tool such as PROPKA, H++, or Dimorphite-DL.
-The default `"none"` keeps the as-modelled neutral state.
+It is a textbook model: it ignores local pKa shifts, buried or
+metal-coordinating residues, and termini.
+
+For an **environment-aware** prediction, use `protonation="pka"`, which runs
+[PROPKA](https://github.com/jensengroup/propka) to predict each ionisable group's
+pKa from the structure and then assigns the charge of the dominant state at a
+chosen pH:
+
+```python
+mol = ms.read(
+    "protein.pdb", bond_perception="template", protonation="pka", ph=7.4
+)
+mol.chemical_features().formal_charges.sum()   # reflects local pKa shifts
+```
+
+This accounts for the side chains, the N- and C-termini, and cysteine/tyrosine,
+and it tracks pH: lowering `ph` protonates (net charge rises) while raising it
+deprotonates (net charge falls). It needs the `propka` extra
+(`pip install "molscope[propka]"`). The default `"none"` keeps the as-modelled
+neutral state.
+
+For **small molecules** the analogous knob lives on the dataset/library path:
+`prepare_dataset(..., protonation="pka", ph=7.4)` and
+`smiles_descriptors(..., protonation="pka")` set each SMILES to its dominant
+ionisation state at the target pH (via
+[Dimorphite-DL](https://github.com/durrantlab/dimorphite_dl),
+`pip install "molscope[dimorphite]"`) before descriptors and fingerprints are
+computed — so charge-sensitive features match the species present at that pH.

@@ -7,6 +7,7 @@ formal charges, valence, aromaticity and sanitized bond-order information.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -164,9 +165,9 @@ def to_rdkit(molecule, *, sanitize: bool = True, infer_bonds: bool = True):
 #: ``(resname, atom name) -> formal charge`` table. This is a fixed textbook
 #: assignment, NOT a pKa- or environment-aware prediction: aspartate/glutamate
 #: carboxylates are -1, lysine/arginine side chains +1, histidine is left
-#: neutral, and chain termini are not charged. For accurate, environment-aware
-#: protonation use a dedicated tool (PROPKA, H++, Dimorphite-DL, or a
-#: force-field preparation step).
+#: neutral, and chain termini are not charged. For an environment-aware
+#: prediction that accounts for the local structure use ``protonation="pka"``
+#: (PROPKA backend); see :func:`pdb_template_bonds`.
 STANDARD_PROTONATION = {
     ("ASP", "OD2"): -1,
     ("GLU", "OE2"): -1,
@@ -175,7 +176,92 @@ STANDARD_PROTONATION = {
 }
 
 
-def pdb_template_bonds(path: str, molecule, protonation: str = "none"):
+#: Maps a PROPKA ionisable-group label to the MolScope atom that carries the
+#: residue's formal charge and whether the group titrates as an ``"acid"``
+#: (negative when deprotonated) or a ``"base"`` (positive when protonated). The
+#: charge is placed on a single representative atom so the residue's *net* charge
+#: matches the pKa prediction; PROPKA's own group labels (``N+``/``C-`` for the
+#: termini) are translated to the corresponding backbone atom names.
+RESIDUE_PKA_GROUPS = {
+    "ASP": ("OD2", "acid"),
+    "GLU": ("OE2", "acid"),
+    "C-": ("OXT", "acid"),
+    "CYS": ("SG", "acid"),
+    "TYR": ("OH", "acid"),
+    "LYS": ("NZ", "base"),
+    "ARG": ("NH2", "base"),
+    "HIS": ("NE2", "base"),
+    "N+": ("N", "base"),
+}
+
+
+def _pka_formal_charge(kind: str, pka: float, ph: float) -> int:
+    """Formal charge of an ionisable group from its pKa relative to ``ph``.
+
+    An acid is deprotonated (charge ``-1``) when the solution is more basic than
+    its pKa (``ph > pka``) and neutral otherwise; a base is protonated (charge
+    ``+1``) when the solution is more acidic than its pKa (``ph < pka``) and
+    neutral otherwise. At ``ph == pka`` the group is taken to be neutral (the
+    half-protonated point is reported as the uncharged species).
+    """
+    if kind == "acid":
+        return -1 if ph > pka else 0
+    if kind == "base":
+        return 1 if ph < pka else 0
+    raise ValueError(f"unknown titration kind {kind!r}; expected 'acid' or 'base'")
+
+
+def _require_propka():
+    """Import PROPKA or raise a clear install hint (mirrors :func:`_require_rdkit`)."""
+    try:
+        import propka.run as propka_run
+    except ImportError as exc:  # pragma: no cover - exercised only when missing
+        raise ImportError(
+            "PROPKA is required for pKa-aware protonation; install it with "
+            'pip install "molscope[propka]"'
+        ) from exc
+    return propka_run
+
+
+def _pka_residue_charges(path: str, ph: float) -> list:
+    """Predict per-residue formal charges for a PDB with PROPKA at ``ph``.
+
+    Returns a list of ``(chain_id, res_num, icode, atom_name, charge)`` tuples,
+    one per ionisable group PROPKA resolves to a known residue type. The caller
+    maps each tuple onto a MolScope atom by ``(chain, resid, icode, atom name)``;
+    groups whose target atom is absent are silently skipped. PROPKA's verbose
+    logging is suppressed for the duration of the run.
+    """
+    propka_run = _require_propka()
+    logger = logging.getLogger("propka")
+    prev_level, prev_propagate = logger.level, logger.propagate
+    logger.setLevel(logging.ERROR)
+    logger.propagate = False
+    try:
+        molecule = propka_run.single(path, optargs=["--pH", str(ph)], write_pka=False)
+    finally:
+        logger.setLevel(prev_level)
+        logger.propagate = prev_propagate
+
+    results = []
+    conformation = molecule.conformations[molecule.conformation_names[0]]
+    for group in conformation.groups:
+        spec = RESIDUE_PKA_GROUPS.get(str(group.residue_type).strip())
+        if spec is None or group.pka_value is None:
+            continue
+        atom_name, kind = spec
+        charge = _pka_formal_charge(kind, float(group.pka_value), float(ph))
+        if charge == 0:
+            continue
+        atom = group.atom
+        icode = (getattr(atom, "icode", "") or "").strip()
+        results.append(
+            (str(atom.chain_id).strip(), int(atom.res_num), icode, atom_name, charge)
+        )
+    return results
+
+
+def pdb_template_bonds(path: str, molecule, protonation: str = "none", ph: float = 7.0):
     """Perceive bonds for standard residues via RDKit's residue-aware PDB reader.
 
     RDKit's PDB parser assigns bonds *and bond orders* for standard amino acids
@@ -194,14 +280,18 @@ def pdb_template_bonds(path: str, molecule, protonation: str = "none"):
     residues; modified residues and exotic ligands stay best-effort.
 
     ``protonation`` controls side-chain charges: ``"none"`` (default) keeps the
-    as-modelled neutral state RDKit reads from the coordinates, while
-    ``"standard"`` applies the idealised pH-7 assignment in
-    :data:`STANDARD_PROTONATION` (aspartate/glutamate -1, lysine/arginine +1,
-    histidine neutral, termini uncharged). The latter is a fixed textbook model,
-    not a pKa-aware prediction.
+    as-modelled neutral state RDKit reads from the coordinates; ``"standard"``
+    applies the idealised pH-7 assignment in :data:`STANDARD_PROTONATION`
+    (aspartate/glutamate -1, lysine/arginine +1, histidine neutral, termini
+    uncharged), a fixed textbook model; and ``"pka"`` runs PROPKA to predict
+    per-residue pKa from the structure and assigns charges for the dominant state
+    at ``ph`` (default 7.0). The ``"pka"`` mode needs PROPKA
+    (``pip install "molscope[propka]"``) and is environment-aware: it accounts
+    for the local electrostatics and burial of each ionisable group, unlike the
+    fixed ``"standard"`` table.
     """
-    if protonation not in ("none", "standard"):
-        raise ValueError("protonation must be 'none' or 'standard'")
+    if protonation not in ("none", "standard", "pka"):
+        raise ValueError("protonation must be 'none', 'standard', or 'pka'")
     Chem, _ = _require_rdkit()
     rdmol = Chem.MolFromPDBFile(path, removeHs=False, sanitize=True)
     if rdmol is None:
@@ -239,6 +329,11 @@ def pdb_template_bonds(path: str, molecule, protonation: str = "none"):
             )
             if charge is not None:
                 charges[i] = charge
+    elif protonation == "pka":
+        for chain, resid, icode, atom_name, charge in _pka_residue_charges(path, ph):
+            ms_index = by_key.get((chain, resid, icode, atom_name))
+            if ms_index is not None:
+                charges[ms_index] = charge
 
     pairs, orders = [], []
     for bond in rdmol.GetBonds():

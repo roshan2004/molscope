@@ -151,7 +151,8 @@ tools and which are intentionally lightweight:
 | Protein template bonds | Cross-checked vs known per-residue chemistry |
 | Native descriptors, molecular graphs | Deterministic; not benchmarked against a curated library |
 | Coarse-graining | Mapping and visualisation only; **not** a validated force-field model |
-| Standard protonation | Idealised pH-7 textbook model; **not** pKa-aware |
+| Standard protonation | Idealised pH-7 textbook model (`"standard"`) |
+| pKa-aware protonation | Environment-aware via PROPKA (proteins) / Dimorphite-DL (SMILES) at a chosen pH |
 
 Methods, tolerances, and failure modes are in [`docs/validation.md`](docs/validation.md).
 The CI **validation** job runs physical invariants plus these cross-checks on every push.

@@ -84,6 +84,8 @@ class PreparedDataset:
     fingerprint_col: Optional[str] = None
     fingerprint_params: Optional[dict] = None
     seed: int = 0
+    protonation: str = "none"
+    ph: float = 7.0
 
     @property
     def n_prepared(self) -> int:
@@ -103,6 +105,8 @@ class PreparedDataset:
             "descriptor_cols": list(self.descriptor_cols),
             "fingerprint_col": self.fingerprint_col,
             "fingerprint_params": self.fingerprint_params,
+            "protonation": self.protonation,
+            "ph": self.ph if self.protonation == "pka" else None,
         }
 
     def write(self, out_dir: str, *, make_figure: bool = True) -> list[str]:
@@ -503,6 +507,8 @@ def prepare_dataset(
     standardize: bool = True,
     dedup: str = "none",
     fingerprints: bool = False,
+    protonation: str = "none",
+    ph: float = 7.0,
 ) -> PreparedDataset:
     """Read, deduplicate, optionally featurise, and split a molecule dataset.
 
@@ -510,11 +516,19 @@ def prepare_dataset(
     :class:`MoleculeTable`. See the module docstring for which options need the
     ``chem`` extra. Returns a :class:`PreparedDataset`; call ``.write(out_dir)``
     to emit the split CSVs, descriptors, report and manifest.
+
+    With ``protonation="pka"`` the SMILES are set to their dominant ionisation
+    state at ``ph`` (Dimorphite-DL, ``pip install "molscope[dimorphite]"``) before
+    descriptors and fingerprints are computed, so charge-sensitive features match
+    the species present at that pH. Deduplication and the stored SMILES column are
+    left on the original (input) SMILES.
     """
     if split not in SPLIT_METHODS:
         raise ValueError(f"unknown split {split!r}; use one of: {', '.join(SPLIT_METHODS)}")
     if dedup not in DEDUP_METHODS:
         raise ValueError(f"unknown dedup {dedup!r}; use one of: {', '.join(DEDUP_METHODS)}")
+    if protonation not in ("none", "pka"):
+        raise ValueError("protonation must be 'none' or 'pka'")
 
     table, smiles_col = _load_source(source, smiles_col)
     n_input = len(table)
@@ -528,24 +542,38 @@ def prepare_dataset(
         kept, n_duplicates = dedup_keys(table.column(key_col), dedup)
         table = table.select_rows(kept)
 
-    # 2. Descriptors: compute from SMILES, or use existing numeric columns.
+    # 2. Featurisation SMILES: optionally set to the dominant state at ``ph`` once,
+    #    reused for both descriptors and fingerprints. The stored SMILES column and
+    #    dedup keys stay on the original input SMILES.
+    feat_smiles = None
+    if protonation == "pka" and (compute_descriptors or fingerprints):
+        if not smiles_col:
+            raise ValueError("protonation='pka' needs a smiles_col")
+        from .library import protonate_smiles
+
+        feat_smiles = protonate_smiles(table.column(smiles_col), ph=ph)
+
+    # 3. Descriptors: compute from SMILES, or use existing numeric columns.
     desc_cols: list[str] = []
     if compute_descriptors:
         if not smiles_col:
             raise ValueError("compute_descriptors needs a smiles_col")
-        matrix, names = smiles_descriptors(table.column(smiles_col), names=rdkit_descriptors)
+        src = feat_smiles if feat_smiles is not None else table.column(smiles_col)
+        matrix, names = smiles_descriptors(src, names=rdkit_descriptors)
         table = table.with_columns(names, matrix)
         desc_cols = names
     elif descriptor_cols:
         desc_cols = list(descriptor_cols)
 
-    # 3. Optional Morgan fingerprints as an extra column.
+    # 4. Optional Morgan fingerprints as an extra column.
     fp_col = None
     fp_params = None
     if fingerprints:
         if not smiles_col:
             raise ValueError("fingerprints need a smiles_col")
-        bits = morgan_fingerprints(table.column(smiles_col))
+        bits = morgan_fingerprints(
+            feat_smiles if feat_smiles is not None else table.column(smiles_col)
+        )
         fp_col = "morgan_onbits"
         table = MoleculeTable(
             columns=table.columns + ([fp_col] if fp_col not in table.columns else []),
@@ -553,7 +581,7 @@ def prepare_dataset(
         )
         fp_params = {"type": "morgan", "radius": DEFAULT_FP_RADIUS, "n_bits": DEFAULT_FP_BITS}
 
-    # 4. Split.
+    # 5. Split.
     if split == "random":
         result = random_split(len(table), test=test, val=val, seed=seed)
     elif split == "diversity":
@@ -581,6 +609,8 @@ def prepare_dataset(
         fingerprint_col=fp_col,
         fingerprint_params=fp_params,
         seed=seed,
+        protonation=protonation,
+        ph=ph,
     )
 
 

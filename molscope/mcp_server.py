@@ -93,7 +93,8 @@ def _friendly_errors(fn: Callable) -> Callable:
     return wrapper
 
 
-def _load(source: str, bond_perception: str = "geometric", protonation: str = "none") -> Molecule:
+def _load(source: str, bond_perception: str = "geometric", protonation: str = "none",
+          ph: float = 7.0) -> Molecule:
     """Resolve ``source`` to a :class:`~molscope.molecule.Molecule`.
 
     ``source`` is one of:
@@ -108,9 +109,10 @@ def _load(source: str, bond_perception: str = "geometric", protonation: str = "n
       results (precise distances, RMSD against experiment).
 
     ``bond_perception="template"`` attaches RDKit residue-template bonds (PDB
-    only); ``protonation="standard"`` adds idealised pH-7 side-chain charges (see
-    :func:`molscope.read_pdb`). Both are ignored for SMILES input, which already
-    carries RDKit-perceived bonds and formal charges.
+    only); ``protonation="standard"`` adds idealised pH-7 side-chain charges, and
+    ``protonation="pka"`` predicts them from the structure with PROPKA at ``ph``
+    (see :func:`molscope.read_pdb`). All are ignored for SMILES input, which
+    already carries RDKit-perceived bonds and formal charges.
     """
     from .io import fetch, read
 
@@ -123,9 +125,9 @@ def _load(source: str, bond_perception: str = "geometric", protonation: str = "n
             raise ValueError('empty SMILES; pass e.g. source="smiles:CCO"')
         return read_smiles(smiles)
     if os.path.exists(source):
-        return read(source, bond_perception=bond_perception, protonation=protonation)
+        return read(source, bond_perception=bond_perception, protonation=protonation, ph=ph)
     if len(token) == 4 and token.isalnum():
-        return fetch(token, bond_perception=bond_perception, protonation=protonation)
+        return fetch(token, bond_perception=bond_perception, protonation=protonation, ph=ph)
     raise FileNotFoundError(
         f"{source!r} is neither an existing file nor a 4-character PDB id; "
         "pass a path like 'examples/data/1ubq.pdb', an id like '1ubq', "
@@ -585,7 +587,8 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
     @server.tool(title="Chemical features", annotations=READ_NET)
     @_friendly_errors
     def chemical_features(
-        source: str, bond_perception: str = "template", protonation: str = "standard"
+        source: str, bond_perception: str = "template", protonation: str = "standard",
+        ph: float = 7.0,
     ) -> str:
         """RDKit-perceived per-atom chemistry (needs the ``chem`` extra).
 
@@ -597,24 +600,28 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         orders and aromatic rings. (Plain distance-based ``"geometric"`` bonds
         miss all of that on bare PDBs.) ``protonation`` defaults to ``"standard"``
         (idealised pH-7 side-chain charges: Asp/Glu -1, Lys/Arg +1, His neutral,
-        termini uncharged) so ``total_formal_charge`` is meaningful; pass
-        ``"none"`` for the as-modelled neutral state. Both apply to PDB inputs
-        only; other formats fall back to their explicit/geometric bonds.
+        termini uncharged) so ``total_formal_charge`` is meaningful; ``"pka"``
+        instead predicts side-chain charges from the structure with PROPKA at
+        ``ph`` (needs the ``propka`` extra), and ``"none"`` keeps the as-modelled
+        neutral state. All apply to PDB inputs only; other formats fall back to
+        their explicit/geometric bonds.
         """
         is_pdb = not (os.path.exists(source) and not source.lower().endswith(
             (".pdb", ".pdb.gz", ".ent")
         ))
         bp = bond_perception if is_pdb else "geometric"
         prot = protonation if (is_pdb and bp == "template") else "none"
-        feats = _load(source, bond_perception=bp, protonation=prot).chemical_features()
+        feats = _load(source, bond_perception=bp, protonation=prot, ph=ph).chemical_features()
+        protonation_label = {
+            "standard": "standard (idealised pH 7, standard side chains only)",
+            "pka": f"pka (PROPKA prediction at pH {ph:g})",
+            "none": "as-modelled (no protonation assigned)",
+        }.get(prot, "as-modelled (no protonation assigned)")
         return json.dumps(
             {
                 "n_atoms": int(len(feats.formal_charges)),
                 "total_formal_charge": int(sum(int(c) for c in feats.formal_charges)),
-                "protonation": (
-                    "standard (idealised pH 7, standard side chains only)"
-                    if prot == "standard" else "as-modelled (no protonation assigned)"
-                ),
+                "protonation": protonation_label,
                 "n_aromatic_atoms": int(sum(bool(a) for a in feats.aromatic_atoms)),
                 "n_bonds": int(len(feats.bond_orders)),
                 "n_aromatic_bonds": int(sum(bool(a) for a in feats.aromatic_bonds)),
@@ -689,6 +696,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         seed: int = 0, smiles_col: Optional[str] = None,
         descriptor_cols: Optional[list[str]] = None, compute_descriptors: bool = False,
         dedup: str = "none", fingerprints: bool = False, save_dir: Optional[str] = None,
+        protonation: str = "none", ph: float = 7.0,
     ) -> str:
         """Build train/validation/test splits from a molecule table or SDF.
 
@@ -696,10 +704,12 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         ``.sdf``. ``split`` is ``"random"``, ``"diversity"`` (needs descriptors,
         via ``descriptor_cols`` or ``compute_descriptors`` + ``smiles_col``), or
         ``"scaffold"`` (Bemis-Murcko, needs ``smiles_col``). ``dedup`` is
-        ``"none"``/``"exact"``/``"canonical"``. Returns a JSON summary plus each
-        molecule's split label inline; pass ``save_dir`` to also write
-        ``train.csv``/``validation.csv``/``test.csv``, ``descriptors.csv``,
-        ``report.md`` and ``manifest.json`` to that directory.
+        ``"none"``/``"exact"``/``"canonical"``. ``protonation="pka"`` sets each
+        SMILES to its dominant ionisation state at ``ph`` (Dimorphite-DL, needs the
+        ``dimorphite`` extra) before descriptors/fingerprints are computed.
+        Returns a JSON summary plus each molecule's split label inline; pass
+        ``save_dir`` to also write ``train.csv``/``validation.csv``/``test.csv``,
+        ``descriptors.csv``, ``report.md`` and ``manifest.json`` to that directory.
         """
         from .prepare import prepare_dataset as _prepare
 
@@ -707,6 +717,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             table, smiles_col=smiles_col, descriptor_cols=descriptor_cols,
             compute_descriptors=compute_descriptors, split=split, test=test, val=val,
             seed=seed, dedup=dedup, fingerprints=fingerprints,
+            protonation=protonation, ph=ph,
         )
         label_of = {}
         for name, indices in (("train", dataset.split.train),
