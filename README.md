@@ -157,6 +157,29 @@ tools and which are intentionally lightweight:
 Methods, tolerances, and failure modes are in [`docs/validation.md`](docs/validation.md).
 The CI **validation** job runs physical invariants plus these cross-checks on every push.
 
+## Scope and design philosophy
+
+MolScope is a lightweight core (NumPy and Matplotlib only) with a broad optional
+surface. Those optional extras are deliberately of two kinds, and the distinction
+is what keeps "lightweight" honest:
+
+- **Interop / output targets** (`networkx`, `pyg`, `dgl`, `viz`, `xlsx`, `gpu`,
+  `mcp`). These let MolScope emit to your framework or run faster. Speaking many
+  formats *is* the bridge mission, so this surface is expected to grow.
+- **Method backends** (`chem`/RDKit, `cif`/gemmi, `propka`, `dimorphite`,
+  `validation`/MDAnalysis). These delegate a scientific computation to an external
+  tool, and each one inherits that tool's scope, versioning, and correctness
+  surface. This is the surface we keep deliberately small.
+
+A new method backend earns inclusion only when MolScope adds real integration
+value beyond what you could write in a line or two against the tool directly (for
+example, mapping RDKit perception back onto MolScope's atom model and residue
+templates), and when the wrapped tool is maintained. The core does something
+useful on its own; everything heavier degrades gracefully when its extra is
+absent. MolScope is not, and is not trying to become, a re-implementation of a
+cheminformatics or simulation stack: where a dedicated tool is the right answer,
+it integrates that tool rather than reinventing it, and says so.
+
 ## FAQ
 
 **Which formats can it read?** `.xyz`, `.pdb`, `.cif`, and `.sdf`; fetch from the
