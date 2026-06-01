@@ -11,6 +11,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``ensemble.analyze_stream`` (and ``ms.StreamAnalysis``): a single-pass,
+  O(1)-memory trajectory-lite analyzer. Given a multi-frame file path (streamed
+  via ``ms.stream``) or any iterable of frames, it tracks per-frame radius of
+  gyration, RMSD to the first frame (Kabsch-superposed over a selection:
+  ``"auto"`` uses C-alphas when present else all atoms, or force ``"ca"``/``"all"``),
+  and optionally helix/strand/coil fractions (``secondary_structure=True``,
+  proteins only; a frame whose assignment fails contributes ``NaN``). Frames must
+  share the first frame's atom count or a ``ValueError`` is raised. Returns a
+  ``StreamAnalysis`` with ``.summary()`` and ``.plot()`` (timeline panels via
+  ``plotting.plot_stream_analysis``). It reads the multi-frame formats MolScope
+  already reads (multi-model PDB, multi-frame XYZ, multi-record SDF) and is not a
+  binary-trajectory (DCD/XTC/TRR) reader.
+
 - Contact-map difference maps. ``ContactMap`` supports subtraction
   (``map_a - map_b``) to compare two structures, e.g. open vs closed states or
   before/after a point mutation. Subtraction guards that both maps share the same

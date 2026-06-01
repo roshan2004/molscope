@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from typing import Optional
 
 import numpy as np
 
 from .molecule import Molecule
+
+#: Accepted RMSD/superposition selections for :func:`analyze_stream`.
+STREAM_SELECTIONS = ("auto", "ca", "all")
 
 
 def align_all(models: list[Molecule], reference: Optional[Molecule] = None) -> list[Molecule]:
@@ -160,3 +165,182 @@ def cluster(models, method: str = "hierarchical", cutoff: Optional[float] = None
             cutoff = float(dm[np.triu_indices_from(dm, k=1)].mean())
         labels = fcluster(z, t=cutoff, criterion="distance")
     return Clustering(labels=labels, matrix=dm, linkage=z)
+
+
+@dataclass
+class StreamAnalysis:
+    """Per-frame timelines from a single streaming pass over a trajectory.
+
+    Holds one scalar per frame for each tracked property, so its memory is
+    O(n_frames) in small floats regardless of system size. ``rmsd`` is measured
+    against the first frame (so ``rmsd[0]`` is 0); the secondary-structure
+    fraction arrays are present only when ``secondary_structure=True`` was
+    requested and the frames are proteins.
+    """
+
+    n_frames: int
+    n_atoms: int
+    selection: str
+    radius_of_gyration: np.ndarray
+    rmsd: np.ndarray
+    helix_fraction: Optional[np.ndarray] = None
+    strand_fraction: Optional[np.ndarray] = None
+    coil_fraction: Optional[np.ndarray] = None
+
+    @property
+    def has_secondary_structure(self) -> bool:
+        return self.helix_fraction is not None
+
+    def summary(self) -> dict:
+        """A compact dict of the headline numbers (means, spread, drift)."""
+        rg, rmsd = self.radius_of_gyration, self.rmsd
+        out = {
+            "n_frames": self.n_frames,
+            "n_atoms": self.n_atoms,
+            "selection": self.selection,
+            "rg_mean": float(np.mean(rg)) if len(rg) else 0.0,
+            "rg_std": float(np.std(rg)) if len(rg) else 0.0,
+            "rg_min": float(np.min(rg)) if len(rg) else 0.0,
+            "rg_max": float(np.max(rg)) if len(rg) else 0.0,
+            "rmsd_mean": float(np.mean(rmsd)) if len(rmsd) else 0.0,
+            "rmsd_max": float(np.max(rmsd)) if len(rmsd) else 0.0,
+            "rmsd_final": float(rmsd[-1]) if len(rmsd) else 0.0,
+        }
+        if self.has_secondary_structure:
+            out["helix_fraction_mean"] = float(np.nanmean(self.helix_fraction))
+            out["strand_fraction_mean"] = float(np.nanmean(self.strand_fraction))
+            out["coil_fraction_mean"] = float(np.nanmean(self.coil_fraction))
+        return out
+
+    def plot(self, show: bool = True):
+        """Plot the timelines (Rg, RMSD, and SS fractions if tracked).
+
+        See :func:`molscope.plotting.plot_stream_analysis`.
+        """
+        from .plotting import plot_stream_analysis
+
+        return plot_stream_analysis(self, show=show)
+
+
+def analyze_stream(
+    source: str | os.PathLike | Iterable[Molecule],
+    *,
+    selection: str = "auto",
+    align: bool = True,
+    secondary_structure: bool = False,
+) -> StreamAnalysis:
+    """Track basic properties frame by frame over a trajectory, in one pass.
+
+    This is a lightweight timeline helper, **not** a trajectory engine: it reads
+    the multi-frame formats MolScope already reads (multi-model PDB, multi-frame
+    XYZ, multi-record SDF) and computes a few scalars per frame without ever
+    holding more than the reference frame in memory. It does not read binary MD
+    formats (DCD/XTC/TRR), unwrap periodic boundaries, or track time/topology
+    across frames; for that use a dedicated trajectory library.
+
+    ``source`` is a path to a multi-frame file (streamed via
+    :func:`molscope.stream`) or any iterable of :class:`Molecule` frames.
+    Tracks, per frame:
+
+    - the radius of gyration (whole frame);
+    - the RMSD to the first frame, Kabsch-superposed when ``align`` is true,
+      over ``selection`` (``"auto"`` uses C-alphas when present, else all atoms;
+      ``"ca"`` forces C-alphas; ``"all"`` uses every atom);
+    - with ``secondary_structure=True``, the helix/strand/coil fractions from the
+      simplified DSSP assignment (proteins only; a frame whose assignment fails
+      contributes ``NaN`` rather than aborting the run).
+
+    Frames must all share the first frame's atom count; a mismatch raises
+    :class:`ValueError`. Returns a :class:`StreamAnalysis`.
+    """
+    if selection not in STREAM_SELECTIONS:
+        raise ValueError(
+            f"selection must be one of {STREAM_SELECTIONS}, got {selection!r}"
+        )
+
+    frames = _iter_frames(source)
+
+    n_atoms = 0
+    sel = selection
+    ref_sel: Optional[Molecule] = None
+    rg: list[float] = []
+    rmsd: list[float] = []
+    helix: list[float] = []
+    strand: list[float] = []
+    coil: list[float] = []
+
+    for i, frame in enumerate(frames):
+        if i == 0:
+            n_atoms = len(frame)
+            sel = _resolve_selection(frame, selection)
+            ref_sel = _select(frame, sel)
+            if len(ref_sel) == 0:
+                raise ValueError(
+                    f"selection {selection!r} matched no atoms in the first frame"
+                )
+        elif len(frame) != n_atoms:
+            raise ValueError(
+                f"frame {i} has {len(frame)} atoms but the first frame has {n_atoms}; "
+                "analyze_stream needs a consistent topology across frames"
+            )
+
+        rg.append(float(frame.radius_of_gyration))
+        rmsd.append(float(_select(frame, sel).rmsd(ref_sel, align=align)))
+        if secondary_structure:
+            h, s, c = _ss_fractions(frame)
+            helix.append(h)
+            strand.append(s)
+            coil.append(c)
+
+    if not rg:
+        raise ValueError("no frames in the stream")
+
+    return StreamAnalysis(
+        n_frames=len(rg),
+        n_atoms=n_atoms,
+        selection=sel,
+        radius_of_gyration=np.asarray(rg, dtype=float),
+        rmsd=np.asarray(rmsd, dtype=float),
+        helix_fraction=np.asarray(helix, dtype=float) if secondary_structure else None,
+        strand_fraction=np.asarray(strand, dtype=float) if secondary_structure else None,
+        coil_fraction=np.asarray(coil, dtype=float) if secondary_structure else None,
+    )
+
+
+def _iter_frames(source):
+    """Yield frames from a path (streamed) or pass an iterable of molecules through."""
+    if isinstance(source, (str, os.PathLike)):
+        from .io import stream
+
+        return stream(os.fspath(source))
+    return iter(source)
+
+
+def _resolve_selection(frame: Molecule, selection: str) -> str:
+    """Turn ``"auto"`` into ``"ca"`` or ``"all"`` based on the first frame.
+
+    Falls back to all-atoms when there is no atom-name metadata (e.g. a bare XYZ
+    trajectory), so ``"auto"`` never fails on a non-protein frame.
+    """
+    if selection != "auto":
+        return selection
+    if frame.atom_names and len(frame.alpha_carbons()):
+        return "ca"
+    return "all"
+
+
+def _select(frame: Molecule, selection: str) -> Molecule:
+    return frame.alpha_carbons() if selection == "ca" else frame
+
+
+def _ss_fractions(frame: Molecule):
+    """Helix/strand/coil fractions for one frame, or NaNs if assignment fails."""
+    try:
+        summary = frame.secondary_structure().summary()
+    except Exception:  # pragma: no cover - non-protein or backbone-less frame
+        return float("nan"), float("nan"), float("nan")
+    return (
+        float(summary["helix_fraction"]),
+        float(summary["strand_fraction"]),
+        float(summary["coil_fraction"]),
+    )
