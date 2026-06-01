@@ -11,6 +11,12 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- Registration instructions for the MCP server with **Codex CLI**
+  (`~/.codex/config.toml` / `codex mcp add`) and **Gemini CLI**
+  (`~/.gemini/settings.json` / `gemini mcp add`), alongside the existing Claude
+  Code/Desktop docs. No code change: the same stdio `molscope-mcp` server works
+  with any MCP client; only the registration syntax differs.
+
 - ``write_sdf`` and ``write_cif`` writers, completing read/write symmetry with the
   existing ``write_xyz``/``write_pdb`` (MolScope already read all four formats).
   Both are lightweight and dependency-free, and round-trip with MolScope's own

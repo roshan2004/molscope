@@ -124,14 +124,16 @@ molscope dock-diverse vina_out.sdf --top 500 --select 50
 ## Use from an AI assistant (MCP)
 
 MolScope ships an optional [Model Context Protocol](https://modelcontextprotocol.io)
-server, so an assistant such as Claude Code or Claude Desktop can drive its
-analyses in natural language. It exposes the public API as 27 tools (structure
-analysis, graphs, plots, dataset prep, docking-hit triage) and adds no new
-science.
+server, so an MCP-capable assistant (Claude Code/Desktop, Codex CLI, Gemini CLI)
+can drive its analyses in natural language. It exposes the public API as 28 tools
+(structure analysis, graphs, plots, dataset prep, docking-hit triage) and adds no
+new science.
 
 ```bash
 pip install "molscope[mcp]"              # needs Python >= 3.10
-claude mcp add molscope -- molscope-mcp  # register with Claude Code
+claude mcp add molscope -- molscope-mcp  # Claude Code
+codex mcp add molscope -- molscope-mcp   # Codex CLI
+gemini mcp add molscope molscope-mcp     # Gemini CLI
 ```
 
 For example: *"fetch trypsin (3ptb), find the benzamidine binding-site residues,
