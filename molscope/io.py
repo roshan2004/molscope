@@ -727,6 +727,129 @@ def _molecule_to_pdb_string(molecule: Molecule) -> str:
     return "".join(lines)
 
 
+def write_sdf(molecule: Molecule, path: str) -> None:
+    """Write a molecule to an SDF / MDL MOL (V2000) file.
+
+    A lightweight, dependency-free writer that round-trips with :func:`read_sdf`:
+    coordinates, element symbols, explicit bonds and Kekulé bond orders, and
+    per-atom formal charges (emitted as an ``M  CHG`` block) are preserved, along
+    with any string ``properties`` as ``> <tag>`` data fields. Aromatic bond
+    orders (``1.5``) are written as the V2000 aromatic code ``4``.
+
+    SDF is an atom-and-bond format, so chain/residue metadata is **not** written.
+    V2000 counts are limited to 999 atoms and 999 bonds; a larger molecule raises
+    :class:`ValueError` (convert via RDKit/OpenBabel for V3000).
+    """
+    with _open(path, "w") as f:
+        f.write(_molecule_to_sdf_string(molecule))
+
+
+def write_cif(molecule: Molecule, path: str) -> None:
+    """Write a molecule to a minimal mmCIF coordinate file.
+
+    A lightweight, dependency-free writer that emits a single ``_atom_site``
+    loop round-tripping with :func:`read_cif` (the builtin parser): coordinates,
+    element symbols, atom names, residue names/numbers, chain ids, and the
+    ATOM/HETATM flag are preserved.
+
+    This is a *coordinate* CIF, not a dictionary-compliant deposition file: there
+    is no symmetry, anisotropic displacement, or connectivity block, so bonds are
+    **not** written (mmCIF ``_atom_site`` carries none).
+    """
+    with _open(path, "w") as f:
+        f.write(_molecule_to_cif_string(molecule))
+
+
+def _molecule_to_sdf_string(molecule: Molecule) -> str:
+    n = len(molecule)
+    bonds = molecule.bond_index if molecule.bond_index is not None else np.empty((0, 2), int)
+    n_bonds = len(bonds)
+    if n > 999 or n_bonds > 999:
+        raise ValueError(
+            f"V2000 SDF supports at most 999 atoms and 999 bonds; got {n} atoms, "
+            f"{n_bonds} bonds (convert via RDKit/OpenBabel for V3000)"
+        )
+    orders = molecule.bond_orders if molecule.bond_orders is not None else np.ones(n_bonds)
+    charges = molecule.formal_charges if len(molecule.formal_charges) == n else np.zeros(n, int)
+
+    counts = f"{n:>3}{n_bonds:>3}  0  0  0  0  0  0  0  0999 V2000"
+    lines = [molecule.name or "molecule", "  molscope", "", counts]
+    for (x, y, z), element in zip(molecule.coords, molecule.elements):
+        sym = (element or "X")[:3]
+        # Charge field left 0; the M CHG block below is the authoritative source.
+        lines.append(f"{x:>10.4f}{y:>10.4f}{z:>10.4f} {sym:<3}{0:>2}{0:>3}" + f"{0:>3}" * 10)
+    for (a, b), order in zip(bonds, orders):
+        lines.append(f"{int(a) + 1:>3}{int(b) + 1:>3}{_sdf_order_code(order):>3}  0  0  0  0")
+
+    nonzero = [(i + 1, int(c)) for i, c in enumerate(charges) if int(c) != 0]
+    for chunk_start in range(0, len(nonzero), 8):  # up to 8 charge pairs per M CHG line
+        chunk = nonzero[chunk_start:chunk_start + 8]
+        entry = "".join(f"{atom:>4}{chg:>4}" for atom, chg in chunk)
+        lines.append(f"M  CHG{len(chunk):>3}{entry}")
+    lines.append("M  END")
+
+    for tag, value in (molecule.properties or {}).items():
+        lines.append(f"> <{tag}>")
+        lines.append(str(value))
+        lines.append("")
+    lines.append("$$$$")
+    return "\n".join(lines) + "\n"
+
+
+def _sdf_order_code(order: float) -> int:
+    """MolScope bond order -> V2000 code (aromatic 1.5 -> 4)."""
+    if np.isclose(order, 1.5):
+        return 4
+    return int(round(float(order)))
+
+
+def _molecule_to_cif_string(molecule: Molecule) -> str:
+    n = len(molecule)
+    names = molecule.atom_names or [e or "X" for e in molecule.elements]
+    resnames = molecule.resnames or ["UNK"] * n
+    chains = molecule.chains or ["A"] * n
+    resids = molecule.resids if len(molecule.resids) == n else np.ones(n, dtype=int)
+    heteros = molecule.hetero if len(molecule.hetero) == n else [False] * n
+
+    block = (molecule.name or "molscope").split()[0] or "molscope"
+    lines = [
+        f"data_{block}",
+        "loop_",
+        "_atom_site.group_PDB",
+        "_atom_site.id",
+        "_atom_site.type_symbol",
+        "_atom_site.label_atom_id",
+        "_atom_site.label_comp_id",
+        "_atom_site.label_asym_id",
+        "_atom_site.label_seq_id",
+        "_atom_site.Cartn_x",
+        "_atom_site.Cartn_y",
+        "_atom_site.Cartn_z",
+        "_atom_site.occupancy",
+        "_atom_site.B_iso_or_equiv",
+    ]
+    for i in range(n):
+        x, y, z = molecule.coords[i]
+        group = "HETATM" if heteros[i] else "ATOM"
+        lines.append(
+            f"{group} {i + 1} {_cif_token(molecule.elements[i] or 'X')} "
+            f"{_cif_token(names[i])} {_cif_token(resnames[i] or 'UNK')} "
+            f"{_cif_token(chains[i] or 'A')} {int(resids[i])} "
+            f"{x:.3f} {y:.3f} {z:.3f} 1.00 0.00"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _cif_token(value) -> str:
+    """Quote a CIF data value, mapping empties to the ``.`` placeholder."""
+    text = str(value).strip()
+    if not text:
+        return "."
+    if any(c.isspace() for c in text) or "'" in text:
+        return f'"{text}"'
+    return text
+
+
 # -- internals --------------------------------------------------------------
 
 

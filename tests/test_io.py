@@ -6,7 +6,17 @@ import pytest
 
 import molscope as ms
 from molscope import Molecule
-from molscope.io import read_pdb, read_pdb_models, read_xyz, write_pdb, write_xyz
+from molscope.io import (
+    read_cif,
+    read_pdb,
+    read_pdb_models,
+    read_sdf,
+    read_xyz,
+    write_cif,
+    write_pdb,
+    write_sdf,
+    write_xyz,
+)
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples", "data")
 
@@ -418,3 +428,74 @@ def test_read_pdb_rejects_unknown_bond_perception():
 def test_protonation_requires_template_bonds():
     with pytest.raises(ValueError, match="protonation requires"):
         read_pdb(os.path.join(DATA, "1ubq.pdb"), protonation="standard")
+
+
+# -- SDF / mmCIF writers ----------------------------------------------------
+
+def test_write_sdf_round_trips_bonds_and_charges(tmp_path):
+    mol = Molecule(
+        np.array([[0.0, 0, 0], [1.5, 0, 0], [3.0, 0, 0], [1.5, 1.4, 0]]),
+        ["C", "C", "O", "O"],
+        bond_index=np.array([[0, 1], [1, 2], [1, 3]]),
+        bond_orders=np.array([1.0, 1.0, 2.0]),
+        formal_charges=np.array([0, 0, -1, 0]),
+        name="acetate",
+        properties={"SOURCE": "test"},
+    )
+    path = tmp_path / "m.sdf"
+    write_sdf(mol, str(path))
+    back = read_sdf(str(path))
+
+    assert np.allclose(back.coords, mol.coords)
+    assert list(back.elements) == ["C", "C", "O", "O"]
+    assert back.bond_index.tolist() == [[0, 1], [1, 2], [1, 3]]
+    assert back.bond_orders.tolist() == [1.0, 1.0, 2.0]
+    assert back.formal_charges.tolist() == [0, 0, -1, 0]  # via the M CHG block
+    assert back.name == "acetate"
+    assert back.properties.get("SOURCE") == "test"
+
+
+def test_write_sdf_maps_aromatic_order(tmp_path):
+    mol = Molecule(
+        np.array([[0.0, 0, 0], [1.4, 0, 0]]), ["C", "C"],
+        bond_index=np.array([[0, 1]]), bond_orders=np.array([1.5]),
+    )
+    path = tmp_path / "ar.sdf"
+    write_sdf(mol, str(path))
+    # 1.5 is written as the V2000 aromatic code 4 and read back as 1.5.
+    assert read_sdf(str(path)).bond_orders.tolist() == [1.5]
+
+
+def test_write_sdf_rejects_oversized_molecule(tmp_path):
+    big = Molecule(np.zeros((1000, 3)), ["C"] * 1000)
+    with pytest.raises(ValueError, match="999"):
+        write_sdf(big, str(tmp_path / "big.sdf"))
+
+
+def test_write_cif_round_trips_atom_site(tmp_path):
+    mol = read_pdb(os.path.join(DATA, "1ubq.pdb"))
+    path = tmp_path / "p.cif"
+    write_cif(mol, str(path))
+    back = read_cif(str(path))
+
+    assert len(back) == len(mol)
+    assert np.allclose(back.coords, mol.coords, atol=1e-3)  # CIF stores 3 decimals
+    assert list(back.elements) == list(mol.elements)
+    assert list(back.atom_names) == list(mol.atom_names)
+    assert list(back.resnames) == list(mol.resnames)
+    assert list(back.chains) == list(mol.chains)
+    assert np.array_equal(back.resids, mol.resids)
+
+
+def test_write_cif_marks_hetatm(tmp_path):
+    mol = Molecule(
+        np.array([[0.0, 0, 0], [1.0, 0, 0]]), ["O", "ZN"],
+        atom_names=["O", "ZN"], resnames=["HOH", "ZN"],
+        resids=np.array([1, 2]), chains=["A", "A"], hetero=[True, True],
+    )
+    path = tmp_path / "het.cif"
+    write_cif(mol, str(path))
+    text = path.read_text()
+    assert "HETATM" in text
+    back = read_cif(str(path))
+    assert list(back.hetero) == [True, True]

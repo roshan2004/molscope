@@ -81,4 +81,11 @@ distances) with care. An invalid SMILES, or one RDKit cannot embed, raises
 ```python
 ms.write_xyz(mol, "out.xyz")
 ms.write_pdb(mol, "out.pdb")
+ms.write_sdf(mol, "out.sdf")   # coords, bonds, Kekulé orders, formal charges, properties
+ms.write_cif(mol, "out.cif")   # minimal _atom_site loop (coords + residue/chain metadata)
 ```
+
+All four writers are dependency-free and round-trip with the matching readers.
+Two scope limits worth knowing: SDF is an atom-and-bond format (no chain/residue
+metadata) capped at 999 atoms/bonds by V2000, and `write_cif` emits a *coordinate*
+mmCIF — an `_atom_site` loop only, with no symmetry, anisotropy, or bonds.

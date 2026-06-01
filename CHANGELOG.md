@@ -11,6 +11,17 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``write_sdf`` and ``write_cif`` writers, completing read/write symmetry with the
+  existing ``write_xyz``/``write_pdb`` (MolScope already read all four formats).
+  Both are lightweight and dependency-free, and round-trip with MolScope's own
+  readers: ``write_sdf`` emits a V2000 record preserving coordinates, elements,
+  bonds and Kekulé orders (aromatic written as code ``4``), formal charges (via an
+  ``M  CHG`` block) and string ``properties``; ``write_cif`` emits a minimal
+  ``_atom_site`` loop preserving coordinates, elements, atom/residue names,
+  residue numbers, chain ids, and the ATOM/HETATM flag. SDF is capped at 999
+  atoms/bonds (V2000) and does not carry chain/residue metadata; the CIF writer is
+  a coordinate file (no symmetry/anisotropy/bonds).
+
 - ``ensemble.analyze_stream`` (and ``ms.StreamAnalysis``): a single-pass,
   O(1)-memory trajectory-lite analyzer. Given a multi-frame file path (streamed
   via ``ms.stream``) or any iterable of frames, it tracks per-frame radius of
