@@ -66,7 +66,7 @@ from .contacts import (
 from .dataset import GraphDataset, build_dataset
 from .descriptors import descriptor_feature_names, descriptors, featurize_many, inertia_tensor
 from .dssp import BackboneTorsions, SecondaryStructure, SSSegment, backbone_torsions
-from .ensemble import Clustering, cluster, rmsd_matrix
+from .ensemble import Clustering, StreamAnalysis, analyze_stream, cluster, rmsd_matrix
 from .ensemble import contact_frequency as ensemble_contact_frequency
 from .graph import (
     MolecularGraph,
@@ -100,6 +100,8 @@ from .structure_prep import StructureReport, prepare_structure
 
 __all__ = [
     "Clustering",
+    "StreamAnalysis",
+    "analyze_stream",
     "ChemicalFeatures",
     "CifValidationReport",
     "BackboneTorsions",

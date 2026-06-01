@@ -303,6 +303,44 @@ def plot_contact_map(contact_map, ax=None, cmap=None, show: bool = True, label_t
     return ax
 
 
+def plot_stream_analysis(analysis, axes=None, show: bool = True):
+    """Plot per-frame timelines from a :class:`~molscope.ensemble.StreamAnalysis`.
+
+    Draws radius of gyration and RMSD-to-first-frame against frame index, plus a
+    stacked helix/strand/coil panel when secondary structure was tracked. Returns
+    the array of matplotlib ``Axes``; pass ``show=False`` to suppress display.
+    """
+    import matplotlib.pyplot as plt
+
+    frames = np.arange(analysis.n_frames)
+    with_ss = analysis.has_secondary_structure
+    n_panels = 3 if with_ss else 2
+
+    if axes is None:
+        _, axes = plt.subplots(n_panels, 1, figsize=(6, 2.0 * n_panels), sharex=True)
+    axes = np.atleast_1d(axes)
+
+    axes[0].plot(frames, analysis.radius_of_gyration, color="tab:blue")
+    axes[0].set_ylabel("Rg (Å)")
+    axes[1].plot(frames, analysis.rmsd, color="tab:red")
+    axes[1].set_ylabel(f"RMSD to frame 0\n(Å, {analysis.selection})")
+
+    if with_ss:
+        axes[2].plot(frames, analysis.helix_fraction, label="helix", color="tab:purple")
+        axes[2].plot(frames, analysis.strand_fraction, label="strand", color="tab:green")
+        axes[2].plot(frames, analysis.coil_fraction, label="coil", color="tab:gray")
+        axes[2].set_ylabel("SS fraction")
+        axes[2].set_ylim(0, 1)
+        axes[2].legend(loc="upper right", fontsize="small", ncol=3)
+
+    axes[-1].set_xlabel("frame")
+    axes[0].set_title(f"Trajectory timeline ({analysis.n_frames} frames)")
+
+    if show:
+        plt.show()
+    return axes
+
+
 def plot_distance_matrix(matrix, ax=None, cmap="magma_r", show: bool = True):
     """Draw a dense pairwise distance matrix heatmap."""
     import matplotlib.pyplot as plt
