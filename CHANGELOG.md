@@ -11,6 +11,15 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- Contact-map difference maps. ``ContactMap`` supports subtraction
+  (``map_a - map_b``) to compare two structures, e.g. open vs closed states or
+  before/after a point mutation. Subtraction guards that both maps share the same
+  level, shape, residue/atom labels, and cutoff, raising ``ValueError`` otherwise,
+  so mismatched structures can't be silently subtracted. The result carries
+  ``is_difference=True`` (tracked explicitly, not inferred from values) with
+  entries in ``[-1, 1]``; ``plot_contact_map`` renders it on a symmetric diverging
+  colormap (gained contacts red, lost contacts blue) with difference-aware labels.
+
 - ``prepare_structure`` (and ``ms.StructureReport``): a one-shot structure QC /
   readiness check that reads a file once and answers "is this ML-ready?". It
   reports non-standard residues, a ligand/water inventory, residue-numbering
