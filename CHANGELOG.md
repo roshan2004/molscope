@@ -11,6 +11,21 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``prepare_structure`` (and ``ms.StructureReport``): a one-shot structure QC /
+  readiness check that reads a file once and answers "is this ML-ready?". It
+  reports non-standard residues, a ligand/water inventory, residue-numbering
+  gaps, backbone chain breaks, residues missing backbone atoms or with truncated
+  side chains, whether hydrogens are present, alternate conformations / partial
+  occupancies (PDB), and the net formal charge at a chosen pH (reusing the
+  ``"standard"``/``"pka"`` protonation backends). Topology checks need only the
+  core NumPy install; the net-charge step degrades to a labelled ``None`` (with a
+  note) when RDKit/PROPKA are absent or the file can't be template-parsed.
+  Exposed as the ``molscope structure-report`` CLI command (text, ``--json``, or
+  Markdown ``--out``) and the ``prepare_structure`` MCP tool. The ``ml_ready``
+  verdict is a heuristic: missing backbone atoms and chain breaks are blockers,
+  everything else is a warning. Adds ``io.fetch_file`` (download an RCSB entry
+  and return its cached path).
+
 - pKa-aware, environment-aware protonation. For proteins, ``protonation="pka"``
   (on ``read``/``read_pdb``/``fetch`` with ``bond_perception="template"``, and
   the ``chemical_features`` MCP tool) runs PROPKA to predict per-residue pKa from

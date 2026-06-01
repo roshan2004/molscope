@@ -96,6 +96,7 @@ from .io import (
 )
 from .molecule import Molecule, ResidueGroup, ResidueId, UnitCell
 from .plotting import plot_distance_matrix, plot_mapping, plot_rmsd_heatmap
+from .structure_prep import StructureReport, prepare_structure
 
 __all__ = [
     "Clustering",
@@ -169,6 +170,8 @@ __all__ = [
     "node_feature_names",
     "to_rdkit",
     "validate_cif",
+    "prepare_structure",
+    "StructureReport",
     "write_cg_index",
     "write_cg_mapping",
     "write_cg_openmm_xml",

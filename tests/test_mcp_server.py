@@ -66,6 +66,7 @@ EXPECTED_TOOLS = {
     "ensemble_summary",
     "chemical_features",
     "validate_cif",
+    "prepare_structure",
     "select_diverse",
     "prepare_dataset",
     "find_duplicates",

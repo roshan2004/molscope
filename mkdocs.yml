@@ -34,6 +34,7 @@ nav:
       - Ensemble analysis: user-guide/ensembles.md
       - Molecular graphs: user-guide/molecular-graphs.md
       - Chemical perception: user-guide/chemical-perception.md
+      - Structure QC (ML-readiness): user-guide/structure-qc.md
       - Structural descriptors: user-guide/descriptors.md
       - Coarse-graining: user-guide/coarse-graining.md
       - Diverse selection from a table: user-guide/library-selection.md
