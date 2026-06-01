@@ -104,6 +104,19 @@ are intentionally lightweight (for example, the coarse-graining tools are for
 educational mapping and bead-graph prototyping, not validated force-field
 generation).
 
+That honesty extends to what `MolScope` itself contributes versus what it
+delegates. The methods it implements are the structure-to-descriptor,
+structure-to-graph, and structure-to-coarse-grained workflows above, built on a
+NumPy and `matplotlib` core; capabilities such as chemical perception, robust
+mmCIF parsing, environment-aware protonation, and reference cross-checks are
+provided by integrating established tools (`RDKit`, `gemmi`, `PROPKA`,
+`Dimorphite-DL`, `MDAnalysis`) behind optional extras, not by re-implementing
+them. `MolScope`'s contribution in those cases is the lightweight, consistent,
+gracefully-degrading bridge from a coordinate file to a usable artifact, and a
+new external backend is added only when that integration adds value beyond a
+direct call to the underlying tool. The package is therefore intentionally not a
+replacement for a full cheminformatics or simulation stack.
+
 That honesty is backed by a two-tier validation suite. Dependency-free
 invariants (rigid-body algebra, geometry, coarse-grain conservation) run
 everywhere, and reference cross-checks run where the reference tool is available:
