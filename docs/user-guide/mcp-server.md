@@ -52,9 +52,46 @@ Add an entry to the app's MCP server configuration:
 }
 ```
 
+### Codex CLI
+
+Either run:
+
+```bash
+codex mcp add molscope -- molscope-mcp
+```
+
+or add a `[mcp_servers.molscope]` table to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.molscope]
+command = "molscope-mcp"
+args = []
+```
+
+### Gemini CLI
+
+Either run:
+
+```bash
+gemini mcp add molscope molscope-mcp
+```
+
+or add an `mcpServers` entry to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "molscope": {
+      "command": "molscope-mcp"
+    }
+  }
+}
+```
+
 Point `command` at the `molscope-mcp` executable from the environment where you
 installed `molscope[mcp]` (use its absolute path if the client does not share
-your shell's `PATH`).
+your shell's `PATH`). The same server works for any MCP client because it speaks
+MCP over stdio; only the registration syntax differs between clients.
 
 ## Tools
 
