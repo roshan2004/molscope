@@ -9,6 +9,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+### Added
+
+- ``view_mapping`` (and ``Molecule.view_mapping``): a notebook-friendly py3Dmol
+  overlay of a coarse-grained model on its atomistic source. The atomistic
+  structure is drawn as a semi-transparent model (``atom_style`` ``"stick"`` by
+  default, or ``"cartoon"``/``"line"``/``"sphere"``) with each bead as a solid
+  sphere at its position, coloured by the same palette as the matplotlib
+  ``plot_mapping`` (virtual sites white, CG bonds as thin cylinders). It is the
+  interactive, rotatable counterpart to ``plot_mapping`` for teaching and
+  designing custom mappings, and builds only on the existing optional ``[viz]``
+  py3Dmol extra. The coarse-grain report is validated before py3Dmol is imported,
+  so a non-CG input fails the same way with or without the extra.
+
 ## [0.12.0] - 2026-06-02
 
 ### Added
