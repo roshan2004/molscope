@@ -318,14 +318,22 @@ def test_py3dmol_view_builds():
 
 
 def _cg_pair():
-    """A two-residue molecule and its residue-COM coarse-graining."""
+    """A two-residue molecule and a CG model with a bond and a virtual site.
+
+    The bond and virtual site make ``view_mapping`` exercise every render branch
+    (bead spheres, the virtual-site sphere, and the bond cylinders).
+    """
     coords = np.array([[0.0, 0, 0], [1, 0, 0], [5, 0, 0], [6, 0, 0]])
     mol = Molecule(
         coords, ["C", "O", "N", "C"],
         resids=[1, 1, 2, 2], resnames=["ALA", "ALA", "GLY", "GLY"],
         chains=["A"] * 4, atom_names=["CA", "CB", "CA", "CB"],
     )
-    return mol, mol.coarse_grain("residue_com")
+    cg = mol.coarse_grain(
+        "residue_com", bonds=[(0, 1)],
+        virtual_sites=[{"name": "MID", "parents": [0, 1]}],
+    )
+    return mol, cg
 
 
 def test_view_mapping_builds():
