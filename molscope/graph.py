@@ -85,6 +85,10 @@ class MolecularGraph:
     aromatic_atoms: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=bool))
     aromatic_bonds: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=bool))
     virtual_sites: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=bool))
+    # True where an edge is a covalent bond; for spatial (k-NN/radius/Delaunay)
+    # graphs this flags which contacts coincide with real bonds. Empty -> all True
+    # (a covalent graph). See :meth:`covalent_edge_flags`.
+    covalent_edges: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=bool))
 
     @property
     def n_atoms(self) -> int:
@@ -397,12 +401,14 @@ class MolecularGraph:
                 attrs["virtual_site"] = bool(self.virtual_sites[i])
             g.add_node(i, **attrs)
         aromatic = self._aromatic_bonds_or_order()
+        covalent = self.covalent_edge_flags()
         for edge_idx, ((i, j), dist, btype) in enumerate(
             zip(self.edges, self.edge_distances, self.edge_types)
         ):
             g.add_edge(
                 int(i), int(j), distance=float(dist), bond_type=float(btype),
                 aromatic=bool(aromatic[edge_idx]),
+                covalent=bool(covalent[edge_idx]),
             )
         return g
 
@@ -414,11 +420,13 @@ class MolecularGraph:
         include_global_node: bool = False,
         include_pe: Optional[str] = None,
         pe_k: int = 8,
+        include_displacement: bool = False,
     ):
         """Return a ``torch_geometric.data.Data`` object.
 
         Populates ``x`` (node features), ``z`` (atomic numbers), ``pos`` (3D
-        coordinates), ``edge_index`` and ``edge_attr``.
+        coordinates), ``edge_index`` and ``edge_attr``, plus an ``is_covalent``
+        edge flag.
 
         Args:
             node_preset: Node feature preset ("default", "basic", "ml").
@@ -427,6 +435,10 @@ class MolecularGraph:
             include_global_node: If True, add a virtual node connected to all others.
             include_pe: Optional positional encoding to include ("laplacian" or "random_walk").
             pe_k: Dimension of the positional encoding.
+            include_displacement: If True, add ``edge_vec`` (E, 3) holding the
+                directed relative displacement ``pos[dst] - pos[src]`` for each
+                edge (for SchNet/EGNN-style models). Note ``pos`` and
+                ``edge_index`` already suffice to derive this on the fly.
         """
         torch = _require("torch", "PyTorch Geometric", "pip install torch torch_geometric")
         Data = _require(
@@ -436,6 +448,7 @@ class MolecularGraph:
         x = self.node_features(node_preset)
         pos = self.coords
         z = self.atomic_numbers
+        is_covalent = self._directed_covalent_flags()
         formal_charge = self._formal_charges_or_zero()
         virtual_site = self._virtual_sites_or_false()
         src, dst, dist, order = self._directed_edges()
@@ -464,6 +477,7 @@ class MolecularGraph:
             e = np.concatenate([e, g_e], axis=0)
             dist = np.concatenate([dist, np.zeros(len(g_src))])
             order = np.concatenate([order, np.zeros(len(g_src))])
+            is_covalent = np.concatenate([is_covalent, np.zeros(len(g_src), dtype=bool)])
 
         if include_self_loops:
             n = len(x)
@@ -474,6 +488,7 @@ class MolecularGraph:
             e = np.concatenate([e, s_e], axis=0)
             dist = np.concatenate([dist, np.zeros(n)])
             order = np.concatenate([order, np.ones(n)])
+            is_covalent = np.concatenate([is_covalent, np.zeros(n, dtype=bool)])
 
         data = Data(
             x=torch.tensor(x, dtype=torch.float),
@@ -486,8 +501,17 @@ class MolecularGraph:
             edge_attr=torch.tensor(e, dtype=torch.float),
             edge_feature_names=edge_feature_names(edge_preset),
             bond_order=torch.tensor(order, dtype=torch.float),
+            is_covalent=torch.tensor(is_covalent, dtype=torch.bool),
             num_nodes=len(x),
         )
+
+        if include_displacement:
+            # Directed relative displacement r_dst - r_src for each edge.
+            if len(src):
+                edge_vec = pos[dst.astype(int)] - pos[src.astype(int)]
+            else:
+                edge_vec = np.empty((0, 3), dtype=float)
+            data.edge_vec = torch.tensor(edge_vec, dtype=torch.float)
 
 
         if include_pe == "laplacian":
@@ -512,6 +536,7 @@ class MolecularGraph:
         include_global_node: bool = False,
         include_pe: Optional[str] = None,
         pe_k: int = 8,
+        include_displacement: bool = False,
     ):
         """Return a ``dgl.DGLGraph`` with node/edge feature tensors.
 
@@ -522,6 +547,8 @@ class MolecularGraph:
             include_global_node: If True, add a virtual node connected to all others.
             include_pe: Optional positional encoding to include ("laplacian" or "random_walk").
             pe_k: Dimension of the positional encoding.
+            include_displacement: If True, add ``edata["edge_vec"]`` (E, 3) holding
+                the directed relative displacement ``pos[dst] - pos[src]``.
         """
         dgl = _require("dgl", "DGL", "pip install dgl")
         torch = _require("torch", "DGL", "pip install dgl torch")
@@ -533,6 +560,7 @@ class MolecularGraph:
         virtual_site = self._virtual_sites_or_false()
         src, dst, dist, order = self._directed_edges()
         e = self._directed_edge_features(edge_preset)
+        is_covalent = self._directed_covalent_flags()
 
         if include_global_node:
             g_idx = len(x)
@@ -554,6 +582,7 @@ class MolecularGraph:
             e = np.concatenate([e, g_e], axis=0)
             dist = np.concatenate([dist, np.zeros(len(g_src))])
             order = np.concatenate([order, np.zeros(len(g_src))])
+            is_covalent = np.concatenate([is_covalent, np.zeros(len(g_src), dtype=bool)])
 
         if include_self_loops:
             n = len(x)
@@ -564,6 +593,7 @@ class MolecularGraph:
             e = np.concatenate([e, s_e], axis=0)
             dist = np.concatenate([dist, np.zeros(n)])
             order = np.concatenate([order, np.ones(n)])
+            is_covalent = np.concatenate([is_covalent, np.zeros(n, dtype=bool)])
 
         g = dgl.graph(
             (torch.tensor(src, dtype=torch.long), torch.tensor(dst, dtype=torch.long)),
@@ -578,6 +608,11 @@ class MolecularGraph:
         g.edata["feat"] = torch.tensor(e, dtype=torch.float)
         g.edata["distance"] = torch.tensor(dist, dtype=torch.float)
         g.edata["bond_order"] = torch.tensor(order, dtype=torch.float)
+        if len(src):
+            g.edata["is_covalent"] = torch.tensor(is_covalent, dtype=torch.bool)
+        if include_displacement and len(src):
+            edge_vec = pos[dst.astype(int)] - pos[src.astype(int)]
+            g.edata["edge_vec"] = torch.tensor(edge_vec, dtype=torch.float)
 
         if include_pe == "laplacian":
             pe = self.laplacian_pe(k=pe_k)
@@ -625,6 +660,18 @@ class MolecularGraph:
         if len(self.virtual_sites):
             return np.asarray(self.virtual_sites, dtype=bool)
         return np.zeros(self.n_atoms, dtype=bool)
+
+    def covalent_edge_flags(self) -> np.ndarray:
+        """Per-edge boolean: is this edge a covalent bond? (all True if unset)."""
+        if len(self.covalent_edges):
+            return np.asarray(self.covalent_edges, dtype=bool)
+        return np.ones(self.n_bonds, dtype=bool)
+
+    def _directed_covalent_flags(self) -> np.ndarray:
+        """The covalent flag duplicated for both directed-edge halves."""
+        if self.n_bonds == 0:
+            return np.empty(0, dtype=bool)
+        return np.concatenate([self.covalent_edge_flags()] * 2)
 
     def _directed_edge_features(self, preset: str) -> np.ndarray:
         undirected = self.edge_features(preset)

@@ -148,6 +148,28 @@ dglg = mol.to_dgl_graph(node_preset="ml", edge_preset="ml")
 residue_dgl = rg.to_dgl_graph(node_preset="ml", edge_preset="ml")
 ```
 
+### Edge attributes for 3D GNNs
+
+Both exporters attach an `is_covalent` edge flag (PyG `data.is_covalent`, DGL
+`edata["is_covalent"]`, NetworkX edge `covalent`). It is all-`True` for a
+bond-derived graph, but for a spatial graph (`knn`/`radius`/`delaunay`) it marks
+which contacts coincide with real covalent bonds, so a model can tell chemical
+bonds from proximity contacts.
+
+For SchNet/EGNN-style models, pass `include_displacement=True` to add a directed
+relative-displacement vector `edge_vec = pos[dst] - pos[src]` per edge
+(antisymmetric: the reverse edge holds its negation):
+
+```python
+g = mol.to_graph(radius=6.0)
+data = g.to_pyg_data(include_displacement=True)   # data.edge_vec, data.is_covalent
+dglg = g.to_dgl_graph(include_displacement=True)   # edata["edge_vec"], edata["is_covalent"]
+```
+
+`pos` and `edge_index` are exported regardless, so equivariant models can also
+derive `r_ij` themselves; `include_displacement` is a convenience that
+precomputes it.
+
 Install the exporter backend you need:
 
 ```bash

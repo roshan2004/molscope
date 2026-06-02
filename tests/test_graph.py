@@ -406,6 +406,15 @@ def test_to_networkx():
     # edge attributes present
     i, j = next(iter(G.edges))
     assert "distance" in G.edges[i, j]
+    assert G.edges[i, j]["covalent"] is True   # bond-derived graph
+
+
+def test_networkx_covalent_flag_on_knn_graph():
+    pytest.importorskip("networkx")
+    G = line_molecule(6).to_graph(knn=3).to_networkx()
+    flags = [d["covalent"] for *_, d in G.edges(data=True)]
+    # a spatial graph has both real bonds (short edges) and pure contacts
+    assert any(flags) and not all(flags)
 
 
 def test_networkx_includes_residue_metadata():
@@ -552,15 +561,45 @@ def test_to_pyg_data_forwards_knn():
     assert data.edge_index.shape == (2, 2 * g.n_bonds)
 
 
+def test_to_pyg_data_displacement_is_antisymmetric():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    data = water().to_pyg_data(include_displacement=True)
+    vec = data.edge_vec.numpy()
+    n = water().to_graph().n_bonds
+    assert vec.shape == (2 * n, 3)
+    # the j->i half is the negation of the i->j half (r_ij = -r_ji)
+    np.testing.assert_allclose(vec[:n], -vec[n:], atol=1e-6)
+    # |edge_vec| equals the stored edge distance
+    np.testing.assert_allclose(
+        np.linalg.norm(vec[:n], axis=1), water().to_graph().edge_distances, atol=1e-5
+    )
+
+
+def test_to_pyg_data_is_covalent_flag():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    # covalent graph: every directed edge is a bond
+    cov = water().to_pyg_data()
+    assert bool(cov.is_covalent.all())
+    # k-NN graph: only the edges coinciding with bonds are flagged
+    g = line_molecule(6).to_graph(knn=3)
+    data = line_molecule(6).to_pyg_data(knn=3)
+    assert int(data.is_covalent.sum()) == 2 * int(g.covalent_edge_flags().sum())
+    assert not bool(data.is_covalent.all())
+
+
 def test_to_dgl_graph():
     pytest.importorskip("dgl")
     pytest.importorskip("torch")
-    g = water().to_dgl_graph()
+    g = water().to_dgl_graph(include_displacement=True)
     assert g.num_nodes() == 3
     assert g.num_edges() == 4
     assert g.ndata["feat"].shape == (3, 2)
     assert g.ndata["formal_charge"].shape == (3,)
     assert g.edata["bond_order"].shape == (4,)
+    assert g.edata["is_covalent"].shape == (4,)
+    assert g.edata["edge_vec"].shape == (4, 3)
 
 
 def test_residue_contact_graph_to_pyg_data():
