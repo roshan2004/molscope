@@ -65,6 +65,7 @@ from .contacts import (
 )
 from .dataset import GraphDataset, build_dataset
 from .descriptors import descriptor_feature_names, descriptors, featurize_many, inertia_tensor
+from .sasa import sasa
 from .dssp import BackboneTorsions, SecondaryStructure, SSSegment, backbone_torsions
 from .ensemble import (
     Clustering,
@@ -152,6 +153,7 @@ __all__ = [
     "contacts",
     "descriptor_feature_names",
     "descriptors",
+    "sasa",
     "docking",
     "dssp",
     "ensemble",

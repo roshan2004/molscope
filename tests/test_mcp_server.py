@@ -57,6 +57,7 @@ EXPECTED_TOOLS = {
     "binding_site",
     "molecular_graph",
     "coarse_grain",
+    "sasa",
     "geometry",
     "measure",
     "rmsd",
@@ -193,6 +194,21 @@ def test_geometry(server):
     assert out["radius_of_gyration"] > 0
     assert len(out["center_of_mass"]) == 3
     assert len(out["principal_moments"]) == 3
+
+
+def test_sasa_residue_level(server):
+    out = _json(server, "sasa", source=UBQ, n_points=96)
+    assert out["level"] == "residue"
+    assert out["total_sasa"] > 0
+    assert out["n_residues"] > 0
+    assert out["most_exposed"] and "residue" in out["most_exposed"][0]
+
+
+def test_sasa_atom_level(server):
+    out = _json(server, "sasa", source=UBQ, n_points=96, level="atom")
+    assert out["level"] == "atom"
+    assert out["n_atoms"] == 660
+    assert out["total_sasa"] > 0
 
 
 def test_measure_distance_angle_dihedral(server):

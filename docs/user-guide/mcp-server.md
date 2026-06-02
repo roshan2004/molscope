@@ -110,6 +110,7 @@ RMSD against experiment).
 | --- | --- | --- |
 | `summarize_structure` | `source` | One-line summary: atoms, formula, chains, size. |
 | `geometry` | `source` | Centre of mass, radius of gyration, bounding box, principal moments. |
+| `sasa` | `source`, `probe_radius`, `n_points`, `level` | Approximate solvent-accessible surface area; total plus most-exposed residues. |
 | `measure` | `source`, `atoms` | Distance (2 indices), angle (3), or dihedral (4). |
 
 ### Comparison
