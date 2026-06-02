@@ -71,6 +71,30 @@ names = ms.pocket_descriptor_feature_names("pocket-basic")
 protein-ligand contact counts, radius of gyration, bounding-box dimensions, and
 ligand-distance summaries.
 
+## Solvent-accessible surface area (SASA)
+
+`mol.sasa()` returns an approximate solvent-accessible surface area in Å² using
+a vectorised Shrake-Rupley sphere — a fast, pure-NumPy descriptor of solvent
+exposure with no C extensions or external SASA libraries:
+
+```python
+mol = ms.read("examples/data/1ubq.pdb")
+per_atom = mol.sasa()                       # (n_atoms,) array, Å²
+per_res = mol.sasa(level="residue")         # (n_residues,) summed per residue
+total = mol.sasa().sum()                    # whole-structure total
+```
+
+Each atom's expanded sphere (its van der Waals radius plus a `probe_radius`
+water probe, 1.4 Å by default) is sampled with `n_points` quasi-uniform points;
+a point is accessible when it lies outside every neighbouring atom's expanded
+sphere. Accuracy improves with `n_points` (default 192, within a few percent of
+an exact analytical surface) at the cost of speed. Residue-level values follow
+`mol.residue_groups()` order.
+
+This is an approximation aimed at the descriptors workflow, not a replacement
+for an exact analytical surface; it is not folded into the fixed `descriptors()`
+presets, so those feature columns stay stable.
+
 ## RDKit descriptors
 
 Install the optional chemical backend to access RDKit's scalar descriptor set:

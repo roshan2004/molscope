@@ -16,6 +16,7 @@
 - `molscope.interface_residues(mol, chain_a, chain_b, cutoff=5.0)`, `chain_contact_matrix(mol, cutoff=5.0)`: chain interfaces.
 - `molscope.ligands(mol, ...)`, `binding_site(mol, ligand=None, cutoff=4.5)`: ligand detection and binding-site residues.
 - `molscope.backbone_torsions(mol)`: per-residue phi/psi/omega.
+- `molscope.sasa(mol, probe_radius=1.4, n_points=192, level="atom")`: approximate Shrake-Rupley solvent-accessible surface area (also `Molecule.sasa(...)`).
 
 Residue identity helpers:
 

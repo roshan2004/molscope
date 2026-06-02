@@ -11,6 +11,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``Molecule.sasa(...)`` (and ``molscope.sasa``): an approximate solvent-accessible
+  surface area in Å² from a vectorised, pure-NumPy Shrake-Rupley sphere — a fast,
+  dependency-free descriptor of solvent exposure with no C extensions or external
+  SASA libraries. Each atom's expanded sphere (Bondi van der Waals radius plus a
+  ``probe_radius`` water probe, 1.4 Å by default) is sampled with ``n_points``
+  quasi-uniform Fibonacci points; ``level="atom"`` returns per-atom values and
+  ``level="residue"`` sums them per residue. Accuracy scales with ``n_points``
+  (default 192, within a few percent of an exact analytical surface). Neighbour
+  search reuses the optional SciPy KD-tree with a NumPy fallback. A ``sasa`` MCP
+  tool reports the total and the most solvent-exposed residues, and ``elements``
+  gains a Bondi ``vdw_radius`` table. It is deliberately **not** folded into the
+  fixed ``descriptors()`` presets, so those feature columns stay stable.
+
 - ``ensemble.cross_correlation(models)`` (exported as ``molscope.cross_correlation``):
   the dynamical cross-correlation matrix (DCCM) of coordinate fluctuations across
   an ensemble or trajectory, a symmetric ``(N, N)`` matrix in ``[-1, 1]`` where

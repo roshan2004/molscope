@@ -438,6 +438,49 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             indent=2,
         )
 
+    @server.tool(title="SASA", annotations=READ_NET)
+    @_friendly_errors
+    def sasa(
+        source: str,
+        probe_radius: float = 1.4,
+        n_points: int = 192,
+        level: str = "residue",
+    ) -> str:
+        """Approximate solvent-accessible surface area (Shrake-Rupley, pure NumPy).
+
+        Returns JSON with the total SASA in Å². ``probe_radius`` is the solvent
+        probe (``1.4`` Å ≈ water); a larger ``n_points`` is more accurate but
+        slower. ``level="residue"`` (default) also lists the most solvent-exposed
+        residues; ``level="atom"`` reports the atom count instead. This is a fast
+        approximation, not an exact analytical surface.
+        """
+        from .sasa import sasa as compute_sasa
+
+        mol = _load(source)
+        values = compute_sasa(
+            mol, probe_radius=probe_radius, n_points=n_points, level=level
+        )
+        out = {
+            "level": level,
+            "probe_radius": probe_radius,
+            "n_points": n_points,
+            "total_sasa": _num(float(values.sum())),
+            "unit": "angstrom^2",
+        }
+        if level == "residue":
+            groups = list(mol.residue_groups())
+            ranked = sorted(
+                zip(groups, values), key=lambda gv: gv[1], reverse=True
+            )[:10]
+            out["n_residues"] = len(groups)
+            out["most_exposed"] = [
+                {"residue": g.residue_id.label(), "sasa": _num(float(s))}
+                for g, s in ranked
+            ]
+        else:
+            out["n_atoms"] = int(len(values))
+        return json.dumps(out, indent=2)
+
     @server.tool(title="Geometry", annotations=READ_NET)
     @_friendly_errors
     def geometry(source: str) -> str:

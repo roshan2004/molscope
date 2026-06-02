@@ -111,6 +111,7 @@ from .plotting import (
     plot_mapping,
     plot_rmsd_heatmap,
 )
+from .sasa import sasa
 from .structure_prep import StructureReport, prepare_structure
 
 __all__ = [
@@ -152,6 +153,7 @@ __all__ = [
     "contacts",
     "descriptor_feature_names",
     "descriptors",
+    "sasa",
     "docking",
     "dssp",
     "ensemble",

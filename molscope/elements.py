@@ -32,6 +32,15 @@ COVALENT_RADII = {
 }
 DEFAULT_RADIUS = 0.75
 
+# Van der Waals radii in angstrom (Bondi 1964, with common protein/ion values).
+# Used for solvent-accessible surface area; unknown atoms fall back to carbon.
+VDW_RADII = {
+    "H": 1.20, "C": 1.70, "N": 1.55, "O": 1.52, "S": 1.80,
+    "P": 1.80, "F": 1.47, "CL": 1.75, "BR": 1.85, "I": 1.98,
+    "FE": 2.00, "CA": 2.31, "NA": 2.27, "MG": 1.73, "ZN": 1.39,
+}
+DEFAULT_VDW_RADIUS = 1.70
+
 
 # Standard atomic weights (g/mol). Unknown atoms fall back to 1.0 so that a
 # mass-weighted centre over all-unknown elements reduces to the geometric mean.
@@ -51,6 +60,11 @@ def color(element: str):
 def covalent_radius(element: str) -> float:
     """Covalent radius in angstrom for an element symbol (case-insensitive)."""
     return COVALENT_RADII.get(element.upper(), DEFAULT_RADIUS)
+
+
+def vdw_radius(element: str) -> float:
+    """Van der Waals radius in angstrom for an element symbol (case-insensitive)."""
+    return VDW_RADII.get(element.upper(), DEFAULT_VDW_RADIUS)
 
 
 def mass(element: str) -> float:

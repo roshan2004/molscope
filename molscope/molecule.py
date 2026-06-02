@@ -1033,6 +1033,22 @@ class Molecule:
 
         return descriptors(self, **kwargs)
 
+    def sasa(
+        self,
+        probe_radius: float = 1.4,
+        n_points: int = 192,
+        level: str = "atom",
+    ) -> np.ndarray:
+        """Approximate solvent-accessible surface area in Å² (Shrake-Rupley).
+
+        ``level="atom"`` returns a per-atom ``(N,)`` array; ``level="residue"``
+        sums atoms within each residue (in :meth:`residue_groups` order). This
+        is a fast, pure-NumPy approximation; see :func:`molscope.sasa`.
+        """
+        from .sasa import sasa
+
+        return sasa(self, probe_radius=probe_radius, n_points=n_points, level=level)
+
     def chemical_features(self, **kwargs):
         """Return optional RDKit-backed aromaticity, valence and charge features.
 
