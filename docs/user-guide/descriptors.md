@@ -35,6 +35,8 @@ Included features:
 - distance histogram
 - bond length summary statistics
 - atom and residue contact summaries
+- SASA summary statistics (total, mean, std, max)
+- polar-contact count and salt-bridge count
 
 Full contact matrices remain available through `mol.contact_map(...)`.
 Distance histograms and atom contact counts are computed in coordinate blocks
@@ -57,7 +59,8 @@ Preset options:
 - `native-basic`: counts, mass, size, compactness, bond summaries, and contact summaries.
 - `native-3d`: `native-basic` plus centres, inertia, principal axes/moments, the
   gyration-tensor shape descriptors (asphericity, acylindricity, relative shape
-  anisotropy κ²), and distance histograms.
+  anisotropy κ²), SASA summary statistics, polar-contact and salt-bridge counts,
+  and distance histograms.
 - `rdkit-basic`: `native-basic` plus a stable subset of RDKit scalar descriptors.
 
 The gyration-tensor shape descriptors in `native-3d` come from the eigenvalues
@@ -68,6 +71,16 @@ relative shape anisotropy `κ² = (b² + ¾c²)/R_g⁴` runs from 0 (a sphere or
 higher-symmetry arrangement) to 1 (a perfectly linear one). They are distinct
 from the legacy `shape_anisotropy` column, which applies a similar formula to
 the inertia moments directly.
+
+`native-3d` also includes surface and interaction summaries: `sasa_total`,
+`sasa_mean`, `sasa_std`, `sasa_max` from the Shrake-Rupley SASA (computed at a
+coarser `sasa_n_points` than `mol.sasa()` for batch speed; tune it via the
+`sasa_n_points` argument), a `polar_contact_count` (N/O atom pairs 2.5-3.5 Å
+apart in different residues, a coarse geometric proxy for polar contacts rather
+than a validated hydrogen-bond count), and a `salt_bridge_count` (basic
+side-chain N within 4 Å of an acidic side-chain O, counting unique residue
+pairs). These need coordinates and are computed only for `native-3d` (and the
+unfiltered default), so `native-basic`/`rdkit-basic` stay fast.
 
 Ligand binding sites have their own fixed-size preset because they need a
 ligand context:
