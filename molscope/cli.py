@@ -107,6 +107,10 @@ def main(argv=None) -> int:
         help="build edges from each atom's K nearest neighbours instead of bonds",
     )
     export_parser.add_argument(
+        "--radius", type=float, metavar="R",
+        help="build edges between all atom pairs within R angstrom instead of bonds",
+    )
+    export_parser.add_argument(
         "--min-seq-sep", type=int, default=0, metavar="N",
         help="drop same-chain edges with residue-id separation below N (needs residue ids)",
     )
@@ -843,6 +847,8 @@ def _run_export(args: argparse.Namespace) -> int:
     graph_kwargs = {"min_seq_sep": args.min_seq_sep}
     if args.knn is not None:
         graph_kwargs["knn"] = args.knn
+    if args.radius is not None:
+        graph_kwargs["radius"] = args.radius
     worker = partial(
         _export_one, to_fmt=args.to, out_dir=args.out_dir,
         kwargs=kwargs, graph_kwargs=graph_kwargs,

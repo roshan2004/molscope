@@ -126,7 +126,7 @@ RMSD against experiment).
 | `compute_descriptors` | `sources` (list), `preset` | Descriptor table, one row per structure. The batch tool. |
 | `chemical_features` | `source`, `bond_perception`, `protonation`, `ph` | RDKit formal charges, aromatic atom/bond counts (`chem` extra). Defaults to `"template"` bonds + `"standard"` pH-7 protonation, so protein PDBs get correct bond orders, aromatic rings, and a meaningful net charge. `protonation="pka"` predicts charges from the structure with PROPKA at `ph` (`propka` extra). |
 | `prepare_structure` | `source`, `protonation`, `ph` | One-shot "is this ML-ready?" QC: non-standard residues, ligand/water inventory, residue-numbering gaps, backbone chain breaks, missing/truncated residues, hydrogens, alternate conformations / occupancies, and net charge. Returns an `ml_ready` verdict with blockers and warnings. Topology needs no extra; net charge uses the `chem`/`propka` backends and degrades gracefully. |
-| `molecular_graph` | `source`, `preset`, `include_chemical_features`, `knn`, `min_seq_sep` | Node/edge counts and feature names for the ML graph. |
+| `molecular_graph` | `source`, `preset`, `include_chemical_features`, `knn`, `radius`, `min_seq_sep` | Node/edge counts and feature names for the ML graph. |
 
 ### Protein analysis
 
