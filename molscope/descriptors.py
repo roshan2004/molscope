@@ -101,6 +101,7 @@ def descriptors(
     desc["principal_moments"] = principal_moments.astype(float).tolist()
     desc["principal_axes"] = principal_axes.reshape(-1).astype(float).tolist()
     desc["shape_anisotropy"] = shape_anisotropy(principal_moments)
+    desc.update(shape_descriptors(principal_moments, float(np.sum(molecule.masses))))
 
     hist = _pairwise_distance_histogram(
         coords,
@@ -138,6 +139,46 @@ def shape_anisotropy(principal_moments) -> float:
         return 0.0
     mean = float(moments.mean())
     return float(1.5 * np.sum((moments - mean) ** 2) / denom)
+
+
+def shape_descriptors(principal_moments, total_mass: float) -> dict:
+    """Gyration-tensor shape descriptors from mass-weighted inertia moments.
+
+    Returns ``asphericity`` (b), ``acylindricity`` (c) and
+    ``relative_shape_anisotropy`` (κ²) — the standard polymer-physics shape
+    parameters. They are defined on the eigenvalues of the gyration tensor
+    ``λ₁ ≤ λ₂ ≤ λ₃``, which are recovered from the already-computed mass-weighted
+    principal moments of inertia ``Iᵢ`` by ``λᵢ = (T − Iᵢ)/M`` with ``T = ΣIᵢ/2``
+    and ``M`` the total mass::
+
+        b  = λ₃ − (λ₁ + λ₂)/2          # 0 for a sphere, grows as it elongates
+        c  = λ₂ − λ₁                    # 0 for any axially symmetric shape
+        κ² = (b² + ¾c²) / R_g⁴          # in [0, 1]
+
+    ``κ²`` is 0 for arrangements with tetrahedral or higher symmetry (a sphere)
+    and 1 for a perfectly linear one, so it is the rigorous "how non-spherical"
+    scalar. Degenerate inputs (no mass or a single point) return zeros.
+    """
+    moments = np.asarray(principal_moments, dtype=float)
+    if total_mass <= 0.0 or moments.size != 3:
+        return {
+            "asphericity": 0.0,
+            "acylindricity": 0.0,
+            "relative_shape_anisotropy": 0.0,
+        }
+    half_trace = moments.sum() / 2.0
+    # Gyration eigenvalues (mass-weighted), ascending; clip rounding noise.
+    lam = np.sort(np.clip((half_trace - moments) / total_mass, 0.0, None))
+    l1, l2, l3 = lam
+    rg2 = float(lam.sum())
+    b = l3 - 0.5 * (l1 + l2)
+    c = l2 - l1
+    kappa2 = (b * b + 0.75 * c * c) / (rg2 * rg2) if rg2 > 0.0 else 0.0
+    return {
+        "asphericity": float(b),
+        "acylindricity": float(c),
+        "relative_shape_anisotropy": float(min(max(kappa2, 0.0), 1.0)),
+    }
 
 
 def featurize_many(
@@ -218,6 +259,9 @@ def _empty_descriptors(desc: dict, distance_bins: int) -> dict:
         "principal_moments": [0.0] * 3,
         "principal_axes": [0.0] * 9,
         "shape_anisotropy": 0.0,
+        "asphericity": 0.0,
+        "acylindricity": 0.0,
+        "relative_shape_anisotropy": 0.0,
         "distance_histogram": [0.0] * distance_bins,
         "bond_count": 0.0,
         "bond_length_mean": 0.0,
@@ -412,6 +456,9 @@ def _preset_scalar_names(preset: str, elements_to_count, rdkit_prefix: str) -> l
             "center_of_mass_y",
             "center_of_mass_z",
             "shape_anisotropy",
+            "asphericity",
+            "acylindricity",
+            "relative_shape_anisotropy",
         ]
     if preset == "rdkit-basic":
         names += [f"{rdkit_prefix}{name}" for name in RDKIT_BASIC_DESCRIPTORS]
