@@ -29,3 +29,6 @@ docs/_build/
 !docs/assets/graphs/
 !docs/assets/graphs/*.png
 aqp_centered.xyz
+
+# Claude Code local runtime files
+.claude/
