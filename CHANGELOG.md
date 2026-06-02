@@ -11,6 +11,17 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``write_cg_itp`` (and ``coarsegrain.write_itp``): export a coarse-grained model
+  as a rough GROMACS ``.itp`` topology skeleton — ``[moleculetype]``, ``[atoms]``
+  (one ``CG_<resname>_<bead>`` row per bead with residue assignment, zero charge
+  and bead mass), ``[bonds]`` from the bead network, and ``[angles]`` enumerated
+  from it (every ``i-j-k`` where ``i-j`` and ``j-k`` are bonds). It is a
+  prototyping skeleton, **not** a validated force field: no force constants,
+  reference values or non-bonded parameters. Complements the existing
+  ``write_cg_openmm_xml`` for GROMACS users; pure Python, no new dependencies.
+  (The proposed JSON mapping export and OpenMM XML helper already shipped as
+  ``write_cg_mapping`` and ``write_cg_openmm_xml``.)
+
 - Edge attributes for 3D GNN workflows on the atom graph exporters, no new
   dependencies. ``MolecularGraph.to_pyg_data``/``to_dgl_graph`` now attach an
   ``is_covalent`` edge flag (and a ``covalent`` edge attribute on

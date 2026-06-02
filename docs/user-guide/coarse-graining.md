@@ -211,6 +211,24 @@ bonds preserved:
 ms.write_pdb(cg, "beads.pdb")             # CONECT records carry the bead bonds
 ```
 
+### Simulation-skeleton exports
+
+For a starting point in a production engine, MolScope writes *topology
+skeletons*: connectivity and per-bead bookkeeping, but no force constants or
+non-bonded parameters.
+
+```python
+ms.write_cg_openmm_xml(cg, "cg.xml")   # OpenMM residue-template ForceField
+ms.write_cg_itp(cg, "cg.itp")          # GROMACS [moleculetype]/[atoms]/[bonds]/[angles]
+```
+
+The OpenMM XML defines bead types, masses and bonds per residue template. The
+GROMACS `.itp` lists beads as `[atoms]` (type `CG_<resname>_<bead>`, zero charge,
+bead mass), the bead bonds, and `[angles]` enumerated from the bond network
+(every `i-j-k` where `i-j` and `j-k` are bonds). Both omit force constants,
+reference values and non-bonded parameters, so map onto a Martini /
+elastic-network model and fill those in before running dynamics.
+
 ## Mapping reports
 
 ```python
@@ -228,11 +246,13 @@ inspection, and graph/ML representations.
 It does not:
 
 - assign Martini bead types or force-field parameters,
-- create angle, dihedral, nonbonded, charge or exclusion terms,
+- assign force constants, reference geometries, charges, non-bonded or exclusion
+  terms (the `.itp` lists bond/angle *connectivity* only), or create dihedrals,
 - build validated production simulation topologies,
 - write GROMACS `[ virtual_sites* ]` topology sections,
 - validate elastic networks, bead chemistry, or thermodynamic behavior,
 - replace a Martini preparation workflow.
 
-The `.ndx` and JSON exports describe a bead assignment for inspection and reuse;
-they are not simulation-ready topology files.
+The `.ndx` and JSON exports describe a bead assignment for inspection and reuse,
+and the OpenMM XML and GROMACS `.itp` are topology skeletons; none are
+simulation-ready force fields.
