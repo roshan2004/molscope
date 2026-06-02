@@ -11,6 +11,20 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``ensemble.cross_correlation(models)`` (exported as ``molscope.cross_correlation``):
+  the dynamical cross-correlation matrix (DCCM) of coordinate fluctuations across
+  an ensemble or trajectory, a symmetric ``(N, N)`` matrix in ``[-1, 1]`` where
+  ``+1`` is lockstep motion, ``-1`` anticorrelated and ``0`` uncorrelated — the
+  standard primitive for spotting concerted motions and allosteric coupling.
+  Structures are Kabsch-superposed first (like ``rmsf``) so rigid-body tumbling
+  does not swamp the internal motion; static atoms are handled (off-diagonal 0,
+  diagonal 1). Pass alpha-carbon-only models for the usual residue-level map. A
+  diverging ``plot_cross_correlation`` heatmap and a ``render_cross_correlation``
+  MCP tool accompany it. (A binary "contact fluctuation" std was considered and
+  rejected: the standard deviation of a 0/1 contact is ``sqrt(p(1-p))``, fully
+  determined by the existing ``contact_frequency``, so it would add no
+  information.)
+
 - Configurable edge construction for the atom/bond graph builders. ``to_graph``
   (and the ``to_pyg_data``/``to_dgl_graph``/``to_networkx`` shortcuts) now accept
   ``knn=k`` to build edges from each atom's ``k`` nearest neighbours by Euclidean

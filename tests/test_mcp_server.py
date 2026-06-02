@@ -78,6 +78,7 @@ EXPECTED_TOOLS = {
     "render_contact_map",
     "render_distance_matrix",
     "render_rmsd_heatmap",
+    "render_cross_correlation",
 }
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
@@ -415,6 +416,16 @@ def test_render_distance_matrix_returns_png(server):
 def test_render_rmsd_heatmap_returns_png(server):
     block = _image(server, "render_rmsd_heatmap", source=ENSEMBLE)
     assert getattr(block, "mimeType", None) == "image/png" and block.data
+
+
+def test_render_cross_correlation_returns_png(server):
+    block = _image(server, "render_cross_correlation", source=ENSEMBLE)
+    assert getattr(block, "mimeType", None) == "image/png" and block.data
+
+
+def test_render_cross_correlation_rejects_single_model(server):
+    with pytest.raises(Exception):  # noqa: B017
+        _image(server, "render_cross_correlation", source=UBQ)
 
 
 def test_render_contact_map_saves_file(server, tmp_path):

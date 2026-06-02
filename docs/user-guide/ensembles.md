@@ -32,6 +32,30 @@ freq = ms.ensemble_contact_frequency(models, cutoff=8.0)
 freq.plot()
 ```
 
+## Concerted motions (dynamical cross-correlation)
+
+`contact_frequency` tells you *which* contacts form, but not whether parts of
+the structure move in a coordinated way. The dynamical cross-correlation matrix
+(DCCM) answers that: each entry is the correlation of two atoms' displacements
+about their mean positions, from `+1` (moving together in lockstep) through `0`
+(uncorrelated) to `-1` (moving in opposite directions). Coupled off-diagonal
+blocks are the classic fingerprint of allosteric communication.
+
+```python
+import molscope as ms
+
+models = ms.read_pdb_models("examples/data/1aml.pdb")
+ca = [m.alpha_carbons() for m in models]    # residue-level DCCM
+corr = ms.cross_correlation(ca)             # (n_residues, n_residues), in [-1, 1]
+ms.plot_cross_correlation(corr)
+```
+
+Structures are Kabsch-superposed onto the first model first (`align=True`) so
+that rigid-body tumbling does not swamp the internal motion, exactly as `rmsf`
+does. Omit the alpha-carbon selection to get an all-atom map. It is a few NumPy
+operations over the coordinate stack: lightweight, but `O(N²)` in memory, so
+prefer the residue-level (alpha-carbon) map for large systems.
+
 ## Streaming trajectory-lite analysis
 
 The functions above take a list of models held in memory. For a long trajectory,

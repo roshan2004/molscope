@@ -66,7 +66,14 @@ from .contacts import (
 from .dataset import GraphDataset, build_dataset
 from .descriptors import descriptor_feature_names, descriptors, featurize_many, inertia_tensor
 from .dssp import BackboneTorsions, SecondaryStructure, SSSegment, backbone_torsions
-from .ensemble import Clustering, StreamAnalysis, analyze_stream, cluster, rmsd_matrix
+from .ensemble import (
+    Clustering,
+    StreamAnalysis,
+    analyze_stream,
+    cluster,
+    cross_correlation,
+    rmsd_matrix,
+)
 from .ensemble import contact_frequency as ensemble_contact_frequency
 from .graph import (
     MolecularGraph,
@@ -98,7 +105,12 @@ from .io import (
     write_xyz,
 )
 from .molecule import Molecule, ResidueGroup, ResidueId, UnitCell
-from .plotting import plot_distance_matrix, plot_mapping, plot_rmsd_heatmap
+from .plotting import (
+    plot_cross_correlation,
+    plot_distance_matrix,
+    plot_mapping,
+    plot_rmsd_heatmap,
+)
 from .structure_prep import StructureReport, prepare_structure
 
 __all__ = [
@@ -153,6 +165,7 @@ __all__ = [
     "plot_mapping",
     "plot_rmsd_heatmap",
     "plot_distance_matrix",
+    "plot_cross_correlation",
     "read",
     "read_cg_mapping",
     "read_cif",
@@ -172,6 +185,7 @@ __all__ = [
     "residue_edge_feature_names",
     "residue_node_feature_names",
     "rmsd_matrix",
+    "cross_correlation",
     "node_feature_names",
     "knn_edges",
     "to_rdkit",

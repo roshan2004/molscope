@@ -38,6 +38,39 @@ def rmsf(models: list[Molecule], align: bool = True) -> np.ndarray:
     return np.sqrt(((stack - mean) ** 2).sum(axis=2).mean(axis=0))
 
 
+def cross_correlation(models: list[Molecule], align: bool = True) -> np.ndarray:
+    """Dynamical cross-correlation matrix (DCCM) of coordinate fluctuations.
+
+    Returns a symmetric ``(N, N)`` matrix in ``[-1, 1]`` whose entry ``(i, j)``
+    is the normalised correlation of atoms ``i`` and ``j``'s displacements about
+    their mean positions across the ensemble:
+
+        C_ij = <Δr_i · Δr_j> / sqrt(<|Δr_i|²> <|Δr_j|²>)
+
+    ``+1`` means the two atoms move together in lockstep, ``-1`` means they move
+    in opposite directions (anticorrelated), and ``0`` means uncorrelated. This
+    is the standard tool for spotting concerted motions and allosteric coupling.
+    Atoms are matched by index and Kabsch-superposed onto the first model first
+    (``align=True``) so rigid-body tumbling does not swamp the internal motion.
+
+    Pass alpha-carbon-only models (``[m.alpha_carbons() for m in models]``) for
+    the usual residue-level DCCM. An atom that never moves has undefined
+    correlation; its off-diagonal entries are ``0`` and its diagonal ``1``.
+    """
+    _check_consistent(models)
+    aligned = align_all(models) if align else models
+    stack = np.array([m.coords for m in aligned])      # (n_models, n_atoms, 3)
+    disp = stack - stack.mean(axis=0)                  # fluctuations about the mean
+    # Covariance of the 3-vector displacements, summed over the x/y/z components.
+    cov = np.einsum("mid,mjd->ij", disp, disp) / len(stack)
+    sigma = np.sqrt(np.diag(cov))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        corr = cov / np.outer(sigma, sigma)
+    corr[~np.isfinite(corr)] = 0.0                     # static atoms: 0 / 0 -> 0
+    np.fill_diagonal(corr, 1.0)
+    return corr
+
+
 def contact_frequency(
     models: list[Molecule],
     cutoff: float = 8.0,

@@ -1139,6 +1139,38 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         ax = plot_rmsd_heatmap(rmsd_matrix(models), show=False)
         return _figure_result(ax.figure, save_path)
 
+    @server.tool(title="Render cross-correlation", annotations=WRITE_NET)
+    @_friendly_errors
+    def render_cross_correlation(
+        source: str, selection: str = "ca", save_path: Optional[str] = None
+    ):
+        """Render a multi-model ensemble's dynamical cross-correlation (DCCM).
+
+        ``source`` must be a multi-model (e.g. NMR) PDB. ``selection`` is
+        ``"ca"`` for a residue-level map over alpha-carbons (default) or
+        ``"all"`` for an all-atom map. Pass ``save_path`` to write the figure to
+        a file and return its path; omit it for inline. The heatmap runs from -1
+        (anticorrelated) through 0 to +1 (correlated motion).
+        """
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from .ensemble import cross_correlation
+        from .io import read_pdb_models
+        from .plotting import plot_cross_correlation
+
+        models = read_pdb_models(source)
+        if len(models) < 2:
+            raise ValueError(
+                "render_cross_correlation needs a multi-model file (e.g. an NMR PDB)"
+            )
+        if selection == "ca":
+            models = [m.alpha_carbons() for m in models]
+        elif selection != "all":
+            raise ValueError(f"selection must be 'ca' or 'all', got {selection!r}")
+        ax = plot_cross_correlation(cross_correlation(models), show=False)
+        return _figure_result(ax.figure, save_path)
+
     def _figure_result(figure, save_path: Optional[str]):
         """Save the figure to ``save_path`` (returning the path) or return it inline.
 

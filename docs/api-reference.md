@@ -53,7 +53,7 @@ Common methods:
 
 ## Other modules
 
-- `molscope.ensemble`: RMSD matrices, alignment, average structures, RMSF, clustering.
+- `molscope.ensemble`: RMSD matrices, alignment, average structures, RMSF, dynamical cross-correlation (`cross_correlation`), clustering.
 - `molscope.contactmap`: contact map construction, metrics, and plotting.
 - `molscope.contacts`: chain interfaces and ligand-binding-site analysis.
 - `molscope.dssp`: simplified DSSP-style secondary-structure assignment, segments, and backbone torsions.
