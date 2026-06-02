@@ -10,6 +10,7 @@ from molscope.descriptors import (
     descriptor_feature_names,
     flatten_descriptors,
     inertia_tensor,
+    shape_descriptors,
 )
 
 
@@ -59,6 +60,50 @@ def test_inertia_tensor_is_symmetric_and_shape_anisotropy_finite():
     np.testing.assert_allclose(tensor, tensor.T)
     assert desc["shape_anisotropy"] >= 0.0
     assert desc["shape_anisotropy"] <= 1.0
+
+
+def _principal_moments(mol):
+    return np.sort(np.linalg.eigvalsh(inertia_tensor(mol)))
+
+
+def test_shape_descriptors_linear_arrangement_is_maximally_anisotropic():
+    # Equal masses on a line are axially symmetric: kappa^2 -> 1, c -> 0.
+    rod = Molecule(np.array([[-2.0, 0, 0], [0.0, 0, 0], [2.0, 0, 0]]), ["C", "C", "C"])
+    out = shape_descriptors(_principal_moments(rod), float(rod.masses.sum()))
+    assert out["relative_shape_anisotropy"] == pytest.approx(1.0, abs=1e-9)
+    assert out["acylindricity"] == pytest.approx(0.0, abs=1e-9)
+    assert out["asphericity"] > 0.0
+
+
+def test_shape_descriptors_symmetric_arrangement_is_isotropic():
+    # Tetrahedral vertices are isotropic: all shape parameters ~ 0.
+    tet = Molecule(
+        np.array([[1.0, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]),
+        ["C", "C", "C", "C"],
+    )
+    out = shape_descriptors(_principal_moments(tet), float(tet.masses.sum()))
+    assert out["relative_shape_anisotropy"] == pytest.approx(0.0, abs=1e-9)
+    assert out["asphericity"] == pytest.approx(0.0, abs=1e-9)
+    assert out["acylindricity"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_shape_descriptors_degenerate_inputs_are_zero():
+    out = shape_descriptors(np.zeros(3), 0.0)
+    assert out == {
+        "asphericity": 0.0,
+        "acylindricity": 0.0,
+        "relative_shape_anisotropy": 0.0,
+    }
+
+
+def test_native_3d_preset_includes_shape_descriptors():
+    desc = water().descriptors(preset="native-3d")
+    for key in ("asphericity", "acylindricity", "relative_shape_anisotropy"):
+        assert key in desc
+    assert 0.0 <= desc["relative_shape_anisotropy"] <= 1.0
+    assert desc["asphericity"] >= 0.0 and desc["acylindricity"] >= 0.0
+    # native-basic stays free of the 3D shape columns
+    assert "asphericity" not in water().descriptors(preset="native-basic")
 
 
 def test_flatten_descriptors_expands_vector_features():

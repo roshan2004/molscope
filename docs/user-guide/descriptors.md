@@ -30,6 +30,7 @@ Included features:
 - inertia tensor
 - principal moments and axes
 - shape anisotropy
+- asphericity, acylindricity, and relative shape anisotropy (κ²)
 - compactness
 - distance histogram
 - bond length summary statistics
@@ -54,8 +55,19 @@ names = ms.descriptor_feature_names("native-3d")
 Preset options:
 
 - `native-basic`: counts, mass, size, compactness, bond summaries, and contact summaries.
-- `native-3d`: `native-basic` plus centres, inertia, principal axes/moments, and distance histograms.
+- `native-3d`: `native-basic` plus centres, inertia, principal axes/moments, the
+  gyration-tensor shape descriptors (asphericity, acylindricity, relative shape
+  anisotropy κ²), and distance histograms.
 - `rdkit-basic`: `native-basic` plus a stable subset of RDKit scalar descriptors.
+
+The gyration-tensor shape descriptors in `native-3d` come from the eigenvalues
+`λ₁ ≤ λ₂ ≤ λ₃` of the gyration tensor (recovered from the mass-weighted inertia
+moments): asphericity `b = λ₃ − ½(λ₁+λ₂)` grows as a structure elongates,
+acylindricity `c = λ₂ − λ₁` is zero for any axially symmetric shape, and the
+relative shape anisotropy `κ² = (b² + ¾c²)/R_g⁴` runs from 0 (a sphere or
+higher-symmetry arrangement) to 1 (a perfectly linear one). They are distinct
+from the legacy `shape_anisotropy` column, which applies a similar formula to
+the inertia moments directly.
 
 Ligand binding sites have their own fixed-size preset because they need a
 ligand context:

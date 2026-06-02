@@ -11,6 +11,16 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- Gyration-tensor shape descriptors in the ``native-3d`` descriptor preset:
+  ``asphericity`` (b), ``acylindricity`` (c) and ``relative_shape_anisotropy``
+  (κ²), the standard polymer-physics shape parameters. They are computed via
+  ``descriptors.shape_descriptors`` from the eigenvalues of the gyration tensor
+  (``λ₁ ≤ λ₂ ≤ λ₃``), which are recovered from the already-computed mass-weighted
+  principal moments of inertia — no new dependencies and negligible runtime. κ²
+  runs from 0 (sphere / higher-symmetry) to 1 (linear). These are distinct from
+  the existing ``shape_anisotropy`` column, which applies a similar formula to the
+  inertia moments directly (left unchanged).
+
 - ``Molecule.sasa(...)`` (and ``molscope.sasa``): an approximate solvent-accessible
   surface area in Å² from a vectorised, pure-NumPy Shrake-Rupley sphere — a fast,
   dependency-free descriptor of solvent exposure with no C extensions or external
@@ -135,6 +145,14 @@ API changes; these are called out under **Changed** where they occur.
 - ``dock-diverse`` now reports how many poses were dropped because RDKit could
   not build a fingerprint for them (``n_failed_fp``), instead of silently
   shrinking the pool.
+
+### Changed
+
+- The ``native-3d`` descriptor preset gained three columns (``asphericity``,
+  ``acylindricity``, ``relative_shape_anisotropy``), so its feature-vector width
+  increased. Consumers that hard-coded the column count should regenerate it via
+  ``descriptor_feature_names("native-3d")``. ``native-basic`` and ``rdkit-basic``
+  are unchanged.
 
 ### Fixed
 
