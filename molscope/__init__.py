@@ -48,6 +48,7 @@ from .coarsegrain import apply_mapping as apply_cg_mapping
 from .coarsegrain import mapping_to_dict as cg_mapping_to_dict
 from .coarsegrain import read_mapping as read_cg_mapping
 from .coarsegrain import write_index as write_cg_index
+from .coarsegrain import write_itp as write_cg_itp
 from .coarsegrain import write_mapping as write_cg_mapping
 from .coarsegrain import write_openmm_xml as write_cg_openmm_xml
 from .contactmap import ContactMap
@@ -200,6 +201,7 @@ __all__ = [
     "prepare_structure",
     "StructureReport",
     "write_cg_index",
+    "write_cg_itp",
     "write_cg_mapping",
     "write_cg_openmm_xml",
     "write_cif",
