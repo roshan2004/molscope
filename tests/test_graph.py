@@ -1,6 +1,7 @@
 """Tests for the molecular graph layer and its exporters."""
 
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -155,6 +156,27 @@ def test_knn_edges_helper_is_importable_from_package():
     assert ms.knn_edges(line_molecule(3).coords, k=1).shape[1] == 2
 
 
+def test_knn_edges_numpy_fallback_matches_scipy(monkeypatch):
+    coords = line_molecule(6).coords
+    expected = ms.knn_edges(coords, 2)
+    # Block the scipy.spatial import so knn_edges takes the dense NumPy path.
+    monkeypatch.setitem(sys.modules, "scipy.spatial", None)
+    np.testing.assert_array_equal(ms.knn_edges(coords, 2), expected)
+
+
+def test_to_graph_knn_accepts_explicit_bond_orders():
+    coords = line_molecule(3).coords
+    n_edges = len(ms.knn_edges(coords, 2))
+    g = line_molecule(3).to_graph(knn=2, bond_orders=[2.0] * n_edges)
+    np.testing.assert_array_equal(g.edge_types, [2.0] * n_edges)
+
+
+def test_to_graph_knn_infer_orders_runs():
+    g = water().to_graph(knn=2, infer_orders=True)
+    assert g.n_bonds == 3  # complete graph on the three atoms
+    assert len(g.edge_types) == g.n_bonds
+
+
 def test_to_graph_knn_builds_geometric_edges():
     g = line_molecule(6).to_graph(knn=2)
     degree = np.bincount(g.edges.reshape(-1), minlength=6)
@@ -189,6 +211,16 @@ def test_min_seq_sep_drops_local_same_chain_edges():
     )
     assert (seps >= 1).all()
     assert filtered.n_bonds < before
+
+
+def test_min_seq_sep_without_chains_treats_structure_as_one_chain():
+    coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    mol = Molecule(coords, ["C", "C", "C"], resids=[1, 1, 5])
+    g = mol.to_graph(knn=2, min_seq_sep=2)
+    resids = np.array([1, 1, 5])
+    i, j = g.edges[:, 0], g.edges[:, 1]
+    # the two resid-1 atoms (separation 0) are no longer linked
+    assert (np.abs(resids[i] - resids[j]) >= 2).all()
 
 
 def test_min_seq_sep_keeps_cross_chain_edges():

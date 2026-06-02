@@ -1155,8 +1155,6 @@ def knn_edges(coords: np.ndarray, k: int) -> np.ndarray:
 
     keep = src != dst
     src, dst = src[keep], dst[keep]
-    if len(src) == 0:
-        return np.empty((0, 2), dtype=int)
     lo = np.minimum(src, dst)
     hi = np.maximum(src, dst)
     return np.unique(np.stack([lo, hi], axis=1), axis=0).astype(int)
