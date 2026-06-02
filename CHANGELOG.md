@@ -9,6 +9,8 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-02
+
 ### Added
 
 - Gyration-tensor shape descriptors in the ``native-3d`` descriptor preset:
@@ -434,7 +436,9 @@ Initial public release under the **MolScope** name, renamed from the earlier
 - `uv` support (lockfile, dev dependency group, `.python-version`), continuous
   integration, and README visual examples.
 
-[Unreleased]: https://github.com/roshan2004/molscope/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/roshan2004/molscope/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/roshan2004/molscope/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/roshan2004/molscope/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/roshan2004/molscope/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/roshan2004/molscope/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/roshan2004/molscope/compare/v0.8.2...v0.8.3

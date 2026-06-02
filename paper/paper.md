@@ -83,13 +83,16 @@ extra that degrades gracefully when absent. Three workflows are documented end
 to end in the project's tutorials:
 
 1. **Structure to descriptors.** Geometry, contacts, contact maps, residue-level
-   analyses, a dependency-free DSSP-style secondary-structure assignment, and
-   optional `RDKit`-backed scalar descriptors. For proteins, an opt-in
-   residue-template path uses `RDKit` to assign correct bonds, bond orders, and
-   aromaticity that geometric distance inference cannot recover.
+   analyses, an approximate solvent-accessible surface area and gyration-tensor
+   shape descriptors, a dependency-free DSSP-style secondary-structure
+   assignment, and optional `RDKit`-backed scalar descriptors. For proteins, an
+   opt-in residue-template path uses `RDKit` to assign correct bonds, bond
+   orders, and aromaticity that geometric distance inference cannot recover.
 2. **Structure to graph.** Atom-and-bond and residue-contact graphs with named
-   node and edge feature presets, Laplacian and random-walk positional
-   encodings, and exporters to `NetworkX`, `PyTorch Geometric`, and `DGL`.
+   node and edge feature presets, a choice of edge construction (covalent bonds,
+   k-nearest-neighbour, fixed-radius, or Delaunay/Voronoi adjacency for
+   spatial-proximity graphs), Laplacian and random-walk positional encodings, and
+   exporters to `NetworkX`, `PyTorch Geometric`, and `DGL`.
 3. **Structure to coarse-grained beads.** Residue centroids, simplified
    Martini-style backbone and side-chain mappings, custom mappings, and virtual
    sites. The output is a regular `Molecule`, so plotting and graph export remain
