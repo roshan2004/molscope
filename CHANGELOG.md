@@ -11,6 +11,20 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- Edge attributes for 3D GNN workflows on the atom graph exporters, no new
+  dependencies. ``MolecularGraph.to_pyg_data``/``to_dgl_graph`` now attach an
+  ``is_covalent`` edge flag (and a ``covalent`` edge attribute on
+  ``to_networkx``): all-``True`` for a bond-derived graph, but for a spatial
+  graph (``knn``/``radius``/``delaunay``) it marks which contacts coincide with
+  real covalent bonds, so a model can distinguish chemical bonds from proximity
+  contacts. A new ``include_displacement=True`` option adds a directed
+  relative-displacement vector ``edge_vec = pos[dst] - pos[src]`` per edge (for
+  SchNet/EGNN-style models), computed direction-correctly so the reverse edge
+  holds its negation. (``pos`` and ``edge_index`` are exported regardless, so
+  equivariant models can derive ``r_ij`` themselves; the option just precomputes
+  it.) ``MolecularGraph`` gains a ``covalent_edges`` field and a
+  ``covalent_edge_flags()`` accessor.
+
 - ``write_frames(frames, path)``: the write-side counterpart to the multi-frame
   readers and ``stream`` — write a list **or generator** of molecules to a
   multi-frame file, consuming frames one at a time so memory stays O(1). The

@@ -1191,7 +1191,17 @@ class Molecule:
                 edges, features.bond_index, features.aromatic_bonds
             )
 
-        # 4. Edge distances.
+        # 4. Per-edge "is this a covalent bond?" flag. Spatial edge sets keep the
+        # subset that coincides with real bonds; bond-derived sets are all True.
+        if knn is not None or radius is not None or delaunay:
+            cov_bonds = self.bonds(tolerance)
+            covalent_edges = _align_bond_flags(
+                edges, cov_bonds, np.ones(len(cov_bonds), dtype=bool)
+            )
+        else:
+            covalent_edges = np.ones(len(edges), dtype=bool)
+
+        # 5. Edge distances.
         if len(edges):
             dist = np.linalg.norm(self.coords[edges[:, 0]] - self.coords[edges[:, 1]], axis=1)
         else:
@@ -1203,7 +1213,7 @@ class Molecule:
             resids=self.resids, icodes=self.icodes, chains=self.chains,
             formal_charges=self.formal_charges, aromatic_atoms=aromatic_atoms,
             aromatic_bonds=aromatic_bonds, virtual_sites=self.virtual_sites,
-            name=self.name,
+            covalent_edges=covalent_edges, name=self.name,
         )
 
     def to_networkx(self, **kwargs):
