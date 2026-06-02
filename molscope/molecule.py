@@ -1064,6 +1064,8 @@ class Molecule:
         bond_orders=None,
         include_chemical_features: bool = False,
         infer_orders: bool = False,
+        knn: Optional[int] = None,
+        min_seq_sep: int = 0,
     ):
         """Build a :class:`molscope.graph.MolecularGraph` from this molecule.
 
@@ -1076,23 +1078,36 @@ class Molecule:
         along. With ``include_chemical_features=True``, optional RDKit-backed
         aromatic atom/bond flags are attached when the ``chem`` extra is
         installed.
-        """
-        from .graph import MolecularGraph
 
-        aromatic_atoms = np.empty(0, dtype=bool)
-        aromatic_bonds = np.empty(0, dtype=bool)
-        if bonds is None:
+        For 3D GNN architectures the edge set can instead be built from geometry:
+        ``knn=k`` connects each atom to its ``k`` nearest neighbours by Euclidean
+        distance (symmetrised by union; mutually exclusive with ``bonds=``).
+        ``min_seq_sep`` then drops same-chain edges whose residue-id separation
+        ``|resid_i - resid_j|`` is below the threshold, the usual way to filter
+        out trivial local backbone contacts; it requires residue ids and applies
+        to covalent, explicit and k-NN edges alike.
+        """
+        from .graph import MolecularGraph, knn_edges, seq_sep_mask
+
+        if knn is not None and bonds is not None:
+            raise ValueError("pass either `knn` or `bonds`, not both")
+
+        # 1. Build the edge set and its matching bond orders.
+        if knn is not None:
+            edges = knn_edges(self.coords, knn)
+            if bond_orders is None:
+                edge_types = (
+                    _guess_bond_orders(self.elements, edges)
+                    if infer_orders else np.ones(len(edges), dtype=float)
+                )
+            else:
+                edge_types = np.asarray(bond_orders, dtype=float).reshape(-1)
+        elif bonds is None:
             edges = self.bonds(tolerance)
             if self.bond_index is not None and self.bond_orders is not None:
                 edge_types = self.bond_orders
             else:
                 edge_types = self.bond_order_array(tolerance, infer_orders=infer_orders)
-            if include_chemical_features:
-                features = self.chemical_features()
-                aromatic_atoms = features.aromatic_atoms
-                aromatic_bonds = _align_bond_flags(
-                    edges, features.bond_index, features.aromatic_bonds
-                )
         else:
             edges = np.asarray(bonds, dtype=int)
             if bond_orders is None:
@@ -1102,9 +1117,29 @@ class Molecule:
                     edge_types = np.ones(len(edges), dtype=float)
             else:
                 edge_types = np.asarray(bond_orders, dtype=float).reshape(-1)
+
         edges = edges.reshape(-1, 2)
+        edge_types = np.asarray(edge_types)
         if len(edge_types) != len(edges):
             raise ValueError(f"{len(edge_types)} bond_orders for {len(edges)} bonds")
+
+        # 2. Drop trivial local same-chain edges by sequence separation.
+        keep = seq_sep_mask(edges, self.resids, self.chains, min_seq_sep)
+        if not keep.all():
+            edges = edges[keep]
+            edge_types = edge_types[keep]
+
+        # 3. Optional RDKit aromatic flags, aligned to the final edge set.
+        aromatic_atoms = np.empty(0, dtype=bool)
+        aromatic_bonds = np.empty(0, dtype=bool)
+        if include_chemical_features:
+            features = self.chemical_features()
+            aromatic_atoms = features.aromatic_atoms
+            aromatic_bonds = _align_bond_flags(
+                edges, features.bond_index, features.aromatic_bonds
+            )
+
+        # 4. Edge distances.
         if len(edges):
             dist = np.linalg.norm(self.coords[edges[:, 0]] - self.coords[edges[:, 1]], axis=1)
         else:

@@ -1118,6 +1118,78 @@ def residue_edge_feature_names(preset: str = "default"):
     return ["distance"] + [f"contact_{method}" for method in CONTACT_GRAPH_METHODS]
 
 
+def knn_edges(coords: np.ndarray, k: int) -> np.ndarray:
+    """Undirected k-nearest-neighbour edges as unique ``(i, j)`` pairs, ``i < j``.
+
+    Each atom is linked to its ``k`` closest neighbours by Euclidean distance.
+    The (generally asymmetric) directed neighbour lists are symmetrised by
+    union, so an edge survives when *either* endpoint ranks the other among its
+    ``k`` nearest — the usual convention for undirected k-NN graphs. ``k`` is
+    capped at ``n - 1``. Uses :class:`scipy.spatial.cKDTree` when available and
+    falls back to a dense NumPy distance sort otherwise.
+    """
+    coords = np.asarray(coords, dtype=float)
+    n = len(coords)
+    if k < 1:
+        raise ValueError(f"knn must be >= 1, got {k}")
+    if n < 2:
+        return np.empty((0, 2), dtype=int)
+    k = min(k, n - 1)
+
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        cKDTree = None
+
+    if cKDTree is not None:
+        # Query k+1 neighbours: the nearest neighbour of each point is itself.
+        _, idx = cKDTree(coords).query(coords, k=k + 1)
+        idx = np.atleast_2d(idx)
+        src = np.repeat(np.arange(n), idx.shape[1])
+        dst = idx.reshape(-1)
+    else:
+        dmat = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=-1)
+        order = np.argsort(dmat, axis=1)[:, : k + 1]
+        src = np.repeat(np.arange(n), order.shape[1])
+        dst = order.reshape(-1)
+
+    keep = src != dst
+    src, dst = src[keep], dst[keep]
+    if len(src) == 0:
+        return np.empty((0, 2), dtype=int)
+    lo = np.minimum(src, dst)
+    hi = np.maximum(src, dst)
+    return np.unique(np.stack([lo, hi], axis=1), axis=0).astype(int)
+
+
+def seq_sep_mask(edges, resids, chains, min_seq_sep: int) -> np.ndarray:
+    """Keep-mask dropping same-chain edges below a residue-index separation.
+
+    An edge is dropped when both endpoints lie on the same chain and their
+    residue ids differ by fewer than ``min_seq_sep`` positions — the standard
+    way to filter out trivial local backbone contacts in protein GNNs. Edges
+    that bridge two chains are always kept. Residue ids are required; chain
+    labels are optional (a structure with no chains is treated as one chain).
+    """
+    edges = np.asarray(edges, dtype=int).reshape(-1, 2)
+    if min_seq_sep <= 0 or len(edges) == 0:
+        return np.ones(len(edges), dtype=bool)
+    if resids is None or len(resids) == 0:
+        raise ValueError(
+            "min_seq_sep needs residue ids to measure sequence separation; "
+            "none are available on this structure"
+        )
+    resids = np.asarray(resids)
+    i, j = edges[:, 0], edges[:, 1]
+    sep = np.abs(resids[i].astype(int) - resids[j].astype(int))
+    if chains:
+        chains = np.asarray(chains)
+        same_chain = chains[i] == chains[j]
+    else:
+        same_chain = np.ones(len(edges), dtype=bool)
+    return ~(same_chain & (sep < min_seq_sep))
+
+
 def residue_contact_graph(
     molecule,
     cutoff: float = 8.0,

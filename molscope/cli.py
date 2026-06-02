@@ -102,6 +102,14 @@ def main(argv=None) -> int:
     export_parser.add_argument(
         "--to", choices=["pyg", "dgl", "nx"], required=True, help="target format"
     )
+    export_parser.add_argument(
+        "--knn", type=int, metavar="K",
+        help="build edges from each atom's K nearest neighbours instead of bonds",
+    )
+    export_parser.add_argument(
+        "--min-seq-sep", type=int, default=0, metavar="N",
+        help="drop same-chain edges with residue-id separation below N (needs residue ids)",
+    )
     export_parser.add_argument("--self-loops", action="store_true", help="add (i, i) edges")
     export_parser.add_argument("--global-node", action="store_true", help="add virtual master node")
     export_parser.add_argument(
@@ -782,12 +790,14 @@ def _write_binding_site_csv(path: str, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
-def _export_one(path: str, to_fmt: str, out_dir: str, kwargs: dict) -> bool:
+def _export_one(
+    path: str, to_fmt: str, out_dir: str, kwargs: dict, graph_kwargs: dict | None = None
+) -> bool:
     """Export one structure's graph (worker; must be top-level so it is picklable
     under the ``spawn`` start method on macOS/Windows)."""
     try:
         mol = read(path)
-        g = mol.to_graph()
+        g = mol.to_graph(**(graph_kwargs or {}))
         stem = os.path.splitext(os.path.basename(path))[0]
 
         if to_fmt == "pyg":
@@ -830,7 +840,13 @@ def _run_export(args: argparse.Namespace) -> int:
         "include_pe": args.pe,
         "pe_k": args.pe_k,
     }
-    worker = partial(_export_one, to_fmt=args.to, out_dir=args.out_dir, kwargs=kwargs)
+    graph_kwargs = {"min_seq_sep": args.min_seq_sep}
+    if args.knn is not None:
+        graph_kwargs["knn"] = args.knn
+    worker = partial(
+        _export_one, to_fmt=args.to, out_dir=args.out_dir,
+        kwargs=kwargs, graph_kwargs=graph_kwargs,
+    )
     if args.jobs > 1:
         with Pool(args.jobs) as p:
             successes = p.map(worker, paths)
