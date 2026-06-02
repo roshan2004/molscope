@@ -48,6 +48,29 @@ Use optional RDKit-backed aromaticity when building the graph:
 g = mol.to_graph(include_chemical_features=True)
 ```
 
+### Configurable edges for 3D GNNs
+
+By default edges are covalent bonds (explicit or geometrically inferred). For
+3D GNN architectures you can build the edge set from geometry instead:
+
+```python
+g = mol.to_graph(knn=12)                 # k-nearest-neighbour edges
+g = mol.to_graph(knn=12, min_seq_sep=3)  # k-NN, minus trivial local contacts
+g = mol.to_graph(min_seq_sep=3)          # filter covalent/inferred bonds too
+```
+
+`knn=k` connects each atom to its `k` nearest neighbours by Euclidean distance.
+The per-node neighbour lists are symmetrised by union, so an edge survives when
+either endpoint ranks the other among its `k` nearest. `k` is capped at
+`n - 1`, and `knn` is mutually exclusive with an explicit `bonds=` array.
+
+`min_seq_sep` drops same-chain edges whose residue-id separation
+`|resid_i - resid_j|` is below the threshold — the standard way to remove
+trivial local backbone interactions (`min_seq_sep=3` keeps only contacts at
+least three residues apart in sequence). Edges that bridge two chains are always
+kept, and the filter needs residue ids. Both options pass straight through the
+exporters, e.g. `mol.to_pyg_data(knn=12, min_seq_sep=3, node_preset="ml")`.
+
 ## Residue contact graphs
 
 Residue contact graphs use residues as nodes and spatial contacts as edges:

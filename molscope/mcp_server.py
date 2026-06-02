@@ -373,25 +373,38 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
     @server.tool(title="Molecular graph summary", annotations=READ_NET)
     @_friendly_errors
     def molecular_graph(
-        source: str, preset: str = "default", include_chemical_features: bool = False
+        source: str,
+        preset: str = "default",
+        include_chemical_features: bool = False,
+        knn: Optional[int] = None,
+        min_seq_sep: int = 0,
     ) -> str:
         """Summarise the atom/bond molecular graph MolScope would export for ML.
 
         Returns JSON with node and edge counts, the node-feature matrix shape,
         and the ordered node/edge feature names for ``preset``. Set
         ``include_chemical_features=True`` to attach RDKit-backed aromatic flags
-        (needs the ``chem`` extra). This describes the graph; use the Python API
-        or CLI to export the actual PyG/DGL/NetworkX object.
+        (needs the ``chem`` extra). Pass ``knn=k`` to build edges from each
+        atom's ``k`` nearest neighbours instead of covalent bonds, and
+        ``min_seq_sep`` to drop same-chain edges whose residue-id separation is
+        below the threshold (needs residue ids). This describes the graph; use
+        the Python API or CLI to export the actual PyG/DGL/NetworkX object.
         """
         from .graph import edge_feature_names, node_feature_names
 
-        graph = _load(source).to_graph(include_chemical_features=include_chemical_features)
+        graph = _load(source).to_graph(
+            include_chemical_features=include_chemical_features,
+            knn=knn,
+            min_seq_sep=min_seq_sep,
+        )
         node_matrix = graph.node_features(preset)
         return json.dumps(
             {
                 "n_nodes": int(graph.n_atoms),
                 "n_edges": int(graph.n_bonds),
                 "preset": preset,
+                "knn": knn,
+                "min_seq_sep": min_seq_sep,
                 "node_feature_matrix_shape": list(node_matrix.shape),
                 "node_feature_names": list(node_feature_names(preset)),
                 "edge_feature_names": list(edge_feature_names(preset)),

@@ -1,6 +1,7 @@
 """Tests for the molecular graph layer and its exporters."""
 
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -120,6 +121,129 @@ def test_to_graph_preserves_explicit_bond_orders():
     )
     g = mol.to_graph()
     np.testing.assert_array_equal(g.edge_types, [2.0])
+
+
+def line_molecule(n=6):
+    coords = np.array([[float(i), 0.0, 0.0] for i in range(n)])
+    return Molecule(coords, ["C"] * n, name="line")
+
+
+def two_chain():
+    coords = np.array(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [2.5, 0.0, 0.0]]
+    )
+    return Molecule(
+        coords, ["C", "C", "C", "C"], name="two-chain",
+        resids=[1, 2, 1, 2], chains=["A", "A", "B", "B"],
+    )
+
+
+# -- configurable edge construction (k-NN, sequence separation) -------------
+
+
+def test_knn_edges_helper_is_undirected_and_loop_free():
+    from molscope.graph import knn_edges
+
+    edges = knn_edges(line_molecule(6).coords, k=2)
+    assert edges.ndim == 2 and edges.shape[1] == 2
+    assert (edges[:, 0] < edges[:, 1]).all()  # i < j, no self-loops
+    # union-symmetrised k-NN: every node keeps at least its own k neighbours
+    degree = np.bincount(edges.reshape(-1), minlength=6)
+    assert (degree >= 2).all()
+
+
+def test_knn_edges_helper_is_importable_from_package():
+    assert ms.knn_edges(line_molecule(3).coords, k=1).shape[1] == 2
+
+
+def test_knn_edges_numpy_fallback_matches_scipy(monkeypatch):
+    coords = line_molecule(6).coords
+    expected = ms.knn_edges(coords, 2)
+    # Block the scipy.spatial import so knn_edges takes the dense NumPy path.
+    monkeypatch.setitem(sys.modules, "scipy.spatial", None)
+    np.testing.assert_array_equal(ms.knn_edges(coords, 2), expected)
+
+
+def test_to_graph_knn_accepts_explicit_bond_orders():
+    coords = line_molecule(3).coords
+    n_edges = len(ms.knn_edges(coords, 2))
+    g = line_molecule(3).to_graph(knn=2, bond_orders=[2.0] * n_edges)
+    np.testing.assert_array_equal(g.edge_types, [2.0] * n_edges)
+
+
+def test_to_graph_knn_infer_orders_runs():
+    g = water().to_graph(knn=2, infer_orders=True)
+    assert g.n_bonds == 3  # complete graph on the three atoms
+    assert len(g.edge_types) == g.n_bonds
+
+
+def test_to_graph_knn_builds_geometric_edges():
+    g = line_molecule(6).to_graph(knn=2)
+    degree = np.bincount(g.edges.reshape(-1), minlength=6)
+    assert (degree >= 2).all()
+    # k-NN edges have no chemical order, so they default to 1.0
+    np.testing.assert_array_equal(g.edge_types, np.ones(g.n_bonds))
+
+
+def test_to_graph_knn_caps_at_n_minus_one_and_completes_graph():
+    g = line_molecule(5).to_graph(knn=100)
+    assert g.n_bonds == 5 * 4 // 2  # complete graph
+
+
+def test_to_graph_knn_rejects_zero_k():
+    with pytest.raises(ValueError):
+        line_molecule(4).to_graph(knn=0)
+
+
+def test_to_graph_knn_and_explicit_bonds_are_mutually_exclusive():
+    with pytest.raises(ValueError, match="either"):
+        line_molecule(4).to_graph(knn=2, bonds=[[0, 1]])
+
+
+def test_min_seq_sep_drops_local_same_chain_edges():
+    g = residue_toy().to_graph(knn=2)
+    before = g.n_bonds
+    filtered = residue_toy().to_graph(knn=2, min_seq_sep=1)
+    # intra-residue edges (separation 0) are removed
+    seps = np.abs(
+        np.array(residue_toy().resids)[filtered.edges[:, 0]]
+        - np.array(residue_toy().resids)[filtered.edges[:, 1]]
+    )
+    assert (seps >= 1).all()
+    assert filtered.n_bonds < before
+
+
+def test_min_seq_sep_without_chains_treats_structure_as_one_chain():
+    coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    mol = Molecule(coords, ["C", "C", "C"], resids=[1, 1, 5])
+    g = mol.to_graph(knn=2, min_seq_sep=2)
+    resids = np.array([1, 1, 5])
+    i, j = g.edges[:, 0], g.edges[:, 1]
+    # the two resid-1 atoms (separation 0) are no longer linked
+    assert (np.abs(resids[i] - resids[j]) >= 2).all()
+
+
+def test_min_seq_sep_keeps_cross_chain_edges():
+    g = two_chain().to_graph(knn=3, min_seq_sep=2)
+    resids = np.array(two_chain().resids)
+    chains = np.array(two_chain().chains)
+    i, j = g.edges[:, 0], g.edges[:, 1]
+    # every surviving same-chain edge respects the separation threshold
+    same = chains[i] == chains[j]
+    assert (np.abs(resids[i] - resids[j])[same] >= 2).all()
+    # the inter-chain edges are all retained
+    assert (~same).sum() == 4
+
+
+def test_min_seq_sep_filters_covalent_bonds_too():
+    # the two covalent bonds in residue_toy are both intra-residue (sep 0)
+    assert residue_toy().to_graph().n_bonds == 2
+    assert residue_toy().to_graph(min_seq_sep=1).n_bonds == 0
+
+
+def test_min_seq_sep_requires_residue_ids():
+    with pytest.raises(ValueError, match="residue ids"):
+        water().to_graph(min_seq_sep=1)
 
 
 def test_graph_carries_metadata():
@@ -318,6 +442,15 @@ def test_to_pyg_data():
     assert data.bond_order.shape == (4,)
     assert data.formal_charge.shape == (3,)
     assert data.virtual_site.shape == (3,)
+
+
+def test_to_pyg_data_forwards_knn():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    g = line_molecule(6).to_graph(knn=2)
+    data = line_molecule(6).to_pyg_data(knn=2)
+    # directed edges are double the undirected k-NN edge count
+    assert data.edge_index.shape == (2, 2 * g.n_bonds)
 
 
 def test_to_dgl_graph():
