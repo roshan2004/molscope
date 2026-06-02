@@ -1013,6 +1013,17 @@ class Molecule:
 
         return plot_mapping(atomistic, self, **kwargs)
 
+    def view_mapping(self, atomistic: Molecule, **kwargs):
+        """Overlay this CG model on its ``atomistic`` source in 3D (py3Dmol).
+
+        The notebook-friendly counterpart to :meth:`plot_mapping`: see
+        :func:`molscope.plotting.view_mapping`. ``atomistic`` must be the
+        molecule this CG model was built from (matching atom order).
+        """
+        from .plotting import view_mapping
+
+        return view_mapping(atomistic, self, **kwargs)
+
     def write_mapping(self, path: str) -> str:
         """Write this CG model's mapping to JSON. See :func:`molscope.write_cg_mapping`."""
         from .coarsegrain import write_mapping

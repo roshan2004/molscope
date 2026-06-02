@@ -226,6 +226,94 @@ def view(molecule, style: str = "stick", width: int = 480, height: int = 360):
     return viewer
 
 
+def view_mapping(
+    atomistic,
+    cg,
+    *,
+    atom_style: str = "stick",
+    atom_opacity: float = 0.4,
+    bead_radius: float = 1.6,
+    bead_opacity: float = 0.9,
+    show_bonds: bool = True,
+    width: int = 480,
+    height: int = 360,
+):
+    """Overlay an atomistic structure with its coarse-grained beads (py3Dmol).
+
+    Renders ``atomistic`` as a semi-transparent model (``atom_style`` ``"stick"``
+    by default, or ``"cartoon"``/``"line"``/``"sphere"``) and draws each bead of
+    the coarse-grained model ``cg`` as a solid sphere at its position, so a
+    mapping can be inspected directly in a Jupyter notebook. Real beads are
+    coloured by the same categorical palette as :func:`plot_mapping`; virtual
+    sites are drawn white, and the CG bond network as thin cylinders. ``cg`` must
+    carry a coarse-graining report (i.e. come from
+    :meth:`~molscope.molecule.Molecule.coarse_grain`) and ``atomistic`` must be
+    the structure it was built from, in the same atom order.
+
+    Requires py3Dmol (``pip install "molscope[viz]"``). Returns the py3Dmol
+    viewer, which renders as the notebook cell output (or call ``.show()``).
+    """
+    report = cg.coarse_grain_report             # validates cg is a CG model
+    n_atoms = len(atomistic)
+    for bead in report.beads:
+        for i in bead.atom_indices:
+            if not 0 <= i < n_atoms:
+                raise ValueError(
+                    f"bead {bead.name!r} references atom index {i} but the "
+                    f"atomistic molecule has {n_atoms} atoms; pass the structure "
+                    "this CG model was built from"
+                )
+
+    try:
+        import py3Dmol
+    except ImportError as exc:  # pragma: no cover - exercised only without py3Dmol
+        raise ImportError(
+            'view_mapping() needs py3Dmol; install it with: pip install "molscope[viz]"'
+        ) from exc
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import to_hex
+
+    from .io import _molecule_to_pdb_string
+
+    palette = [to_hex(c) for c in plt.get_cmap("tab20").colors]
+    virtual_flags = (
+        np.asarray(cg.virtual_sites, dtype=bool)
+        if len(cg.virtual_sites) else np.zeros(len(cg), dtype=bool)
+    )
+
+    viewer = py3Dmol.view(width=width, height=height)
+    viewer.addModel(_molecule_to_pdb_string(atomistic), "pdb")
+    viewer.setStyle({}, {atom_style: {"opacity": float(atom_opacity)}})
+
+    for site in range(len(cg)):
+        x, y, z = (float(v) for v in cg.coords[site])
+        if virtual_flags[site]:
+            viewer.addSphere({
+                "center": {"x": x, "y": y, "z": z},
+                "radius": float(bead_radius) * 0.8,
+                "color": "white", "opacity": float(bead_opacity),
+            })
+        else:
+            viewer.addSphere({
+                "center": {"x": x, "y": y, "z": z},
+                "radius": float(bead_radius),
+                "color": palette[site % len(palette)],
+                "opacity": float(bead_opacity),
+            })
+
+    if show_bonds and cg.bond_index is not None:
+        for i, j in cg.bond_index:
+            a, b = cg.coords[int(i)], cg.coords[int(j)]
+            viewer.addCylinder({
+                "start": {"x": float(a[0]), "y": float(a[1]), "z": float(a[2])},
+                "end": {"x": float(b[0]), "y": float(b[1]), "z": float(b[2])},
+                "radius": 0.15, "color": "gray",
+            })
+
+    viewer.zoomTo()
+    return viewer
+
+
 def spin_gif(molecule, path: str, frames: int = 36, fps: int = 15, **plot_kwargs):
     """Render a spinning 3D view and save it as an animated GIF.
 

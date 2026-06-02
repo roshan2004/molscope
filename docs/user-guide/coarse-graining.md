@@ -115,6 +115,16 @@ ms.plot_mapping(fragment, cg)     # or: cg.plot_mapping(fragment)
 
 ![Martini bead mapping of an Aquaporin-1 fragment, atoms coloured by bead](../assets/coarsegrain/1fqy-martini-mapping.png)
 
+For an interactive, rotatable overlay in a Jupyter notebook, use `view_mapping`
+(needs the `[viz]` py3Dmol extra). It renders the atomistic structure as a
+semi-transparent model with the beads drawn as solid spheres on top, so students
+can rotate the mapping and see exactly which atoms each bead replaces:
+
+```python
+cg.view_mapping(fragment)                       # or: ms.view_mapping(fragment, cg)
+cg.view_mapping(fragment, atom_style="cartoon") # cartoon backbone for proteins
+```
+
 To compare mapping resolutions side by side, run:
 
 ```bash

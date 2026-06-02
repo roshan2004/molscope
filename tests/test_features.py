@@ -317,6 +317,41 @@ def test_py3dmol_view_builds():
     assert viewer is not None
 
 
+def _cg_pair():
+    """A two-residue molecule and a CG model with a bond and a virtual site.
+
+    The bond and virtual site make ``view_mapping`` exercise every render branch
+    (bead spheres, the virtual-site sphere, and the bond cylinders).
+    """
+    coords = np.array([[0.0, 0, 0], [1, 0, 0], [5, 0, 0], [6, 0, 0]])
+    mol = Molecule(
+        coords, ["C", "O", "N", "C"],
+        resids=[1, 1, 2, 2], resnames=["ALA", "ALA", "GLY", "GLY"],
+        chains=["A"] * 4, atom_names=["CA", "CB", "CA", "CB"],
+    )
+    cg = mol.coarse_grain(
+        "residue_com", bonds=[(0, 1)],
+        virtual_sites=[{"name": "MID", "parents": [0, 1]}],
+    )
+    return mol, cg
+
+
+def test_view_mapping_builds():
+    pytest.importorskip("py3Dmol")
+    mol, cg = _cg_pair()
+    viewer = cg.view_mapping(mol)
+    assert viewer is not None
+
+
+def test_view_mapping_requires_a_cg_report():
+    # A plain molecule carries no coarse-graining report; this is caught before
+    # py3Dmol is even imported, so it holds with or without the [viz] extra.
+    from molscope.plotting import view_mapping
+
+    with pytest.raises(ValueError, match="coarse-grain"):
+        view_mapping(water(), water())
+
+
 def test_spin_gif(tmp_path):
     import matplotlib
 

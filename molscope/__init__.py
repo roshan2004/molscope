@@ -111,6 +111,7 @@ from .plotting import (
     plot_distance_matrix,
     plot_mapping,
     plot_rmsd_heatmap,
+    view_mapping,
 )
 from .sasa import sasa
 from .structure_prep import StructureReport, prepare_structure
@@ -166,6 +167,7 @@ __all__ = [
     "interface_residues",
     "ligands",
     "plot_mapping",
+    "view_mapping",
     "plot_rmsd_heatmap",
     "plot_distance_matrix",
     "plot_cross_correlation",
