@@ -196,8 +196,38 @@ def test_to_graph_knn_rejects_zero_k():
 
 
 def test_to_graph_knn_and_explicit_bonds_are_mutually_exclusive():
-    with pytest.raises(ValueError, match="either"):
+    with pytest.raises(ValueError, match="at most one"):
         line_molecule(4).to_graph(knn=2, bonds=[[0, 1]])
+
+
+def test_to_graph_radius_builds_proximity_edges():
+    # six atoms on a line at spacing 1.0; radius 1.5 links only adjacent atoms
+    g = line_molecule(6).to_graph(radius=1.5)
+    pairs = {tuple(e) for e in g.edges}
+    assert pairs == {(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)}
+    np.testing.assert_array_equal(g.edge_types, np.ones(g.n_bonds))
+    # every edge is within the cutoff
+    assert (g.edge_distances <= 1.5).all()
+
+
+def test_to_graph_radius_wider_cutoff_adds_more_edges():
+    near = line_molecule(6).to_graph(radius=1.5).n_bonds
+    far = line_molecule(6).to_graph(radius=2.5).n_bonds
+    assert far > near
+
+
+def test_to_graph_radius_combines_with_min_seq_sep():
+    filtered = residue_toy().to_graph(radius=4.0, min_seq_sep=1)
+    seps = np.abs(
+        np.array(residue_toy().resids)[filtered.edges[:, 0]]
+        - np.array(residue_toy().resids)[filtered.edges[:, 1]]
+    )
+    assert (seps >= 1).all()
+
+
+def test_to_graph_radius_and_knn_are_mutually_exclusive():
+    with pytest.raises(ValueError, match="at most one"):
+        line_molecule(4).to_graph(knn=2, radius=2.0)
 
 
 def test_min_seq_sep_drops_local_same_chain_edges():

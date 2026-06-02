@@ -158,6 +158,14 @@ def test_molecular_graph(server):
     assert out["node_feature_names"] and out["edge_feature_names"]
 
 
+def test_molecular_graph_radius_mode(server):
+    covalent = _json(server, "molecular_graph", source=UBQ)
+    out = _json(server, "molecular_graph", source=UBQ, radius=8.0)
+    assert out["radius"] == 8.0
+    # a generous spatial cutoff yields far more edges than covalent bonds
+    assert out["n_edges"] > covalent["n_edges"]
+
+
 def test_coarse_grain(server):
     out = _json(server, "coarse_grain", source=UBQ, mapping="residue_com")
     assert out["mapping"] == "residue_com"

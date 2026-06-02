@@ -1065,6 +1065,7 @@ class Molecule:
         include_chemical_features: bool = False,
         infer_orders: bool = False,
         knn: Optional[int] = None,
+        radius: Optional[float] = None,
         min_seq_sep: int = 0,
     ):
         """Build a :class:`molscope.graph.MolecularGraph` from this molecule.
@@ -1079,25 +1080,32 @@ class Molecule:
         aromatic atom/bond flags are attached when the ``chem`` extra is
         installed.
 
-        For 3D GNN architectures the edge set can instead be built from geometry:
-        ``knn=k`` connects each atom to its ``k`` nearest neighbours by Euclidean
-        distance (symmetrised by union; mutually exclusive with ``bonds=``).
-        ``min_seq_sep`` then drops same-chain edges whose residue-id separation
-        ``|resid_i - resid_j|`` is below the threshold, the usual way to filter
-        out trivial local backbone contacts; it requires residue ids and applies
-        to covalent, explicit and k-NN edges alike.
+        For 3D GNN architectures the edge set can instead be built from spatial
+        proximity, which is standard for macromolecules. ``knn=k`` connects each
+        atom to its ``k`` nearest neighbours (symmetrised by union); ``radius=r``
+        connects every atom pair within ``r`` angstrom (reusing the fast
+        :meth:`contacts` KD-tree / cell-list search). At most one of ``knn``,
+        ``radius`` and ``bonds`` may be given. ``min_seq_sep`` then drops
+        same-chain edges whose residue-id separation ``|resid_i - resid_j|`` is
+        below the threshold, the usual way to filter out trivial local backbone
+        contacts; it requires residue ids and applies to every edge mode.
         """
         from .graph import MolecularGraph, knn_edges, seq_sep_mask
 
-        if knn is not None and bonds is not None:
-            raise ValueError("pass either `knn` or `bonds`, not both")
+        chosen = [
+            name for name, value in (("knn", knn), ("radius", radius), ("bonds", bonds))
+            if value is not None
+        ]
+        if len(chosen) > 1:
+            raise ValueError(f"pass at most one of knn, radius, bonds; got {', '.join(chosen)}")
 
         # 1. Build the edge set and its matching bond orders.
-        if knn is not None:
-            edges = knn_edges(self.coords, knn)
+        if knn is not None or radius is not None:
+            # Geometric edges carry no inherent bond order.
+            edges = knn_edges(self.coords, knn) if knn is not None else self.contacts(cutoff=radius)
             if bond_orders is None:
                 edge_types = (
-                    _guess_bond_orders(self.elements, edges)
+                    _guess_bond_orders(self.elements, edges.reshape(-1, 2))
                     if infer_orders else np.ones(len(edges), dtype=float)
                 )
             else:

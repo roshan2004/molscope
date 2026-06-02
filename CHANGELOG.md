@@ -25,19 +25,21 @@ API changes; these are called out under **Changed** where they occur.
   determined by the existing ``contact_frequency``, so it would add no
   information.)
 
-- Configurable edge construction for the atom/bond graph builders. ``to_graph``
-  (and the ``to_pyg_data``/``to_dgl_graph``/``to_networkx`` shortcuts) now accept
-  ``knn=k`` to build edges from each atom's ``k`` nearest neighbours by Euclidean
-  distance (union-symmetrised, capped at ``n - 1``; mutually exclusive with an
-  explicit ``bonds=`` array) and ``min_seq_sep`` to drop same-chain edges whose
-  residue-id separation is below the threshold — the standard way to filter out
-  trivial local backbone contacts in 3D protein GNNs. ``min_seq_sep`` applies to
-  covalent, explicit and k-NN edges alike; inter-chain edges are always kept.
-  The same two options are exposed on the ``export`` CLI subcommand
-  (``--knn``/``--min-seq-sep``) and the ``molecular_graph`` MCP tool, and the
-  building block is published as ``molscope.knn_edges``. As part of this,
-  ``include_chemical_features`` now aligns RDKit aromatic flags for explicit and
-  k-NN edge sets too, not only inferred covalent bonds.
+- Configurable spatial-proximity edge construction for the atom/bond graph
+  builders. ``to_graph`` (and the ``to_pyg_data``/``to_dgl_graph``/``to_networkx``
+  shortcuts) now accept ``knn=k`` to build edges from each atom's ``k`` nearest
+  neighbours by Euclidean distance (union-symmetrised, capped at ``n - 1``) or
+  ``radius=r`` to connect every atom pair within ``r`` angstrom (reusing the fast
+  ``contacts`` KD-tree / cell-list search) — the standard ways to build graphs
+  for 3D macromolecular GNNs. At most one of ``knn``, ``radius`` and an explicit
+  ``bonds=`` array may be given. ``min_seq_sep`` drops same-chain edges whose
+  residue-id separation is below the threshold (filtering trivial local backbone
+  contacts) and applies to every edge mode; inter-chain edges are always kept.
+  All three are exposed on the ``export`` CLI subcommand
+  (``--knn``/``--radius``/``--min-seq-sep``) and the ``molecular_graph`` MCP tool,
+  and the k-NN building block is published as ``molscope.knn_edges``. As part of
+  this, ``include_chemical_features`` now aligns RDKit aromatic flags for
+  explicit and geometric edge sets too, not only inferred covalent bonds.
 
 - Registration instructions for the MCP server with **Codex CLI**
   (`~/.codex/config.toml` / `codex mcp add`) and **Gemini CLI**
