@@ -388,6 +388,23 @@ def main(argv=None) -> int:
         "--out", "-o", metavar="PATH", help="write a Markdown report to PATH",
     )
 
+    # -- COARSE-GRAIN subcommand -------------------------------------------
+    cg_parser = subparsers.add_parser(
+        "coarse-grain",
+        help="map a structure onto coarse-grained beads and write a coordinate file",
+    )
+    cg_src = cg_parser.add_mutually_exclusive_group(required=True)
+    cg_src.add_argument("file", nargs="?", help="path to a structure file")
+    cg_src.add_argument("--fetch", metavar="PDBID", help="download from RCSB by id")
+    cg_parser.add_argument(
+        "--mapping", choices=["residue_com", "residue_centroid", "martini"],
+        default="residue_com", help="bead mapping (default: residue_com)",
+    )
+    cg_parser.add_argument(
+        "--out", "-o", metavar="PATH",
+        help="write the bead model to PATH (.pdb/.cif/.xyz; format by extension)",
+    )
+
     # Default to 'view' if no subcommand provided
     if argv is None:
         argv = sys.argv[1:]
@@ -417,6 +434,8 @@ def main(argv=None) -> int:
         return _run_dock_report(args)
     if args.command == "structure-report":
         return _run_structure_report(args)
+    if args.command == "coarse-grain":
+        return _run_coarse_grain(args)
 
     return 0
 
@@ -605,6 +624,47 @@ def _run_structure_report(args: argparse.Namespace) -> int:
             return 2
         print(f"wrote {args.out}")
     return 0
+
+
+def _run_coarse_grain(args: argparse.Namespace) -> int:
+    try:
+        mol = fetch(args.fetch) if args.fetch else read(args.file)
+        beads, report = mol.coarse_grain(mapping=args.mapping, return_report=True)
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"coarse-grain failed: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"{args.mapping}: {report.coverage()}")
+    if report.n_dropped:
+        print(f"{report.n_dropped} atom(s) left unassigned")
+
+    if args.out:
+        try:
+            _write_structure(beads, args.out)
+        except (OSError, ValueError) as exc:
+            print(f"could not write {args.out}: {exc}", file=sys.stderr)
+            return 2
+        print(f"wrote {report.n_sites} beads to {args.out}")
+        if os.path.splitext(args.out)[1].lower() != ".pdb" and beads.bond_index is not None:
+            print(
+                "note: the bead bond network is written only for .pdb output "
+                "(CONECT records); other formats are coordinates only",
+                file=sys.stderr,
+            )
+    return 0
+
+
+def _write_structure(molecule, path: str) -> None:
+    """Write a molecule to ``path``, choosing the writer from the extension."""
+    from .io import write_cif, write_pdb, write_xyz
+
+    ext = os.path.splitext(path)[1].lower()
+    writers = {".pdb": write_pdb, ".ent": write_pdb, ".cif": write_cif, ".xyz": write_xyz}
+    if ext not in writers:
+        raise ValueError(
+            f"unsupported output extension {ext!r}; use .pdb, .cif or .xyz"
+        )
+    writers[ext](molecule, path)
 
 
 def _parse_selection(specs) -> dict:

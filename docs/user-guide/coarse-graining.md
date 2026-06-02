@@ -138,6 +138,24 @@ atom-to-bead lines are drawn automatically for small structures; toggle them
 with `show_assignment=True/False`, and the bead legend appears when there are
 few enough beads to stay readable (`max_legend`).
 
+## From the command line
+
+`molscope coarse-grain` maps a structure to beads and writes a coordinate file
+you can open in PyMOL, ChimeraX, or Mol\*:
+
+```bash
+molscope coarse-grain structure.pdb --mapping martini --out cg.pdb
+molscope coarse-grain --fetch 1fqy --mapping residue_com --out cg.pdb
+molscope coarse-grain structure.pdb --mapping martini        # summary only, no file
+```
+
+`--mapping` is `residue_com` (default), `residue_centroid`, or `martini`. The
+output format follows the `--out` extension (`.pdb`, `.cif`, or `.xyz`); beads
+are written as pseudo-atoms with their bead names (`BB`/`SC` for Martini), and
+the bead bond network is written as `CONECT` records for `.pdb` output. `.cif`
+and `.xyz` carry coordinates only, so prefer `.pdb` when you want the network to
+show up in a viewer. The command always prints the mapping coverage.
+
 ## Inspect the bead assignment
 
 Every coarse-grained `Molecule` carries a structured report describing exactly

@@ -106,6 +106,7 @@ runnable tour over the bundled samples lives in [`examples/tour.py`](examples/to
 | `molscope analyze` | batch descriptor table to CSV |
 | `molscope binding-site` | ligand binding-site contacts and pocket descriptors |
 | `molscope export` | batch graph export to PyG / DGL / NetworkX |
+| `molscope coarse-grain` | map a structure to CG beads and write a coordinate file (PDB CONECT bonds) |
 | `molscope select` | diverse subset from a CSV/XLSX table |
 | `molscope dock-summary` | rank docking poses from an SDF; summary + top-hit tables + score plot |
 | `molscope dock-diverse` | diverse shortlist of top hits by Tanimoto clustering |
@@ -116,6 +117,7 @@ runnable tour over the bundled samples lives in [`examples/tour.py`](examples/to
 molscope examples/data/1fqy.pdb --select atom_name=CA --color-by residue --save ca.png
 molscope analyze examples/data/*.pdb --out results.csv --preset native-3d --jobs 4
 molscope export "data/*.cif" --to pyg --out-dir pyg_graphs/ --pe laplacian --jobs 8
+molscope coarse-grain examples/data/1fqy.pdb --mapping martini --out cg.pdb
 molscope select molecules.csv --smiles-col SMILES --compute-descriptors -n 100 --out picked.csv
 molscope dock-summary vina_out.sdf --score-field minimizedAffinity --top 20
 molscope dock-diverse vina_out.sdf --top 500 --select 50

@@ -11,6 +11,18 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``molscope coarse-grain`` CLI subcommand: map a structure to coarse-grained
+  beads and write a coordinate file from the command line, closing the
+  pillar-parity gap (coarse-graining was the only core workflow without a CLI
+  verb). ``molscope coarse-grain structure.pdb --mapping martini --out cg.pdb``
+  reads the structure, applies the chosen mapping (``residue_com`` default,
+  ``residue_centroid`` or ``martini``; or ``--fetch PDBID``), and writes the
+  beads by output extension. Beads are pseudo-atoms with their bead names
+  (``BB``/``SC`` for Martini), and the bead bond network is written as ``CONECT``
+  records for ``.pdb`` output so it loads into PyMOL/ChimeraX/Mol\*; ``.cif`` and
+  ``.xyz`` carry coordinates only (a note is printed). Wires the existing
+  ``coarsegrain`` module and writers to the CLI; no new dependencies.
+
 - ``view_mapping`` (and ``Molecule.view_mapping``): a notebook-friendly py3Dmol
   overlay of a coarse-grained model on its atomistic source. The atomistic
   structure is drawn as a semi-transparent model (``atom_style`` ``"stick"`` by
