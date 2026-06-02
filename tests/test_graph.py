@@ -564,7 +564,7 @@ def test_to_pyg_data_forwards_knn():
 def test_to_pyg_data_displacement_is_antisymmetric():
     pytest.importorskip("torch")
     pytest.importorskip("torch_geometric")
-    data = water().to_pyg_data(include_displacement=True)
+    data = water().to_graph().to_pyg_data(include_displacement=True)
     vec = data.edge_vec.numpy()
     n = water().to_graph().n_bonds
     assert vec.shape == (2 * n, 3)
@@ -592,7 +592,7 @@ def test_to_pyg_data_is_covalent_flag():
 def test_to_dgl_graph():
     pytest.importorskip("dgl")
     pytest.importorskip("torch")
-    g = water().to_dgl_graph(include_displacement=True)
+    g = water().to_graph().to_dgl_graph(include_displacement=True)
     assert g.num_nodes() == 3
     assert g.num_edges() == 4
     assert g.ndata["feat"].shape == (3, 2)
