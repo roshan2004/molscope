@@ -11,6 +11,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- Surface and interaction descriptors in the ``native-3d`` preset, all pure-NumPy
+  with no new dependencies: SASA summary statistics (``sasa_total``,
+  ``sasa_mean``, ``sasa_std``, ``sasa_max``) from the existing Shrake-Rupley
+  approximation (computed at a coarser ``sasa_n_points`` default of 96 for batch
+  speed, configurable); a ``salt_bridge_count`` (basic side-chain N within 4 Å of
+  an acidic side-chain O, counting unique Arg/Lys/His↔Asp/Glu residue pairs); and
+  a ``polar_contact_count`` (N/O atom pairs 2.5-3.5 Å apart in different residues
+  — a coarse geometric proxy for polar contacts, deliberately *not* named a
+  hydrogen-bond count since it has no angle or hydrogen-position check, and
+  MolScope already exposes rigorous H-bonds via DSSP and RDKit donor/acceptor
+  counts). These are computed only for ``native-3d`` (and the unfiltered default),
+  so ``native-basic``/``rdkit-basic`` keep their columns and their speed.
+
 - ``molscope coarse-grain`` CLI subcommand: map a structure to coarse-grained
   beads and write a coordinate file from the command line, closing the
   pillar-parity gap (coarse-graining was the only core workflow without a CLI
@@ -33,6 +46,14 @@ API changes; these are called out under **Changed** where they occur.
   designing custom mappings, and builds only on the existing optional ``[viz]``
   py3Dmol extra. The coarse-grain report is validated before py3Dmol is imported,
   so a non-CG input fails the same way with or without the extra.
+
+### Changed
+
+- The ``native-3d`` descriptor preset gained six columns (``sasa_total``,
+  ``sasa_mean``, ``sasa_std``, ``sasa_max``, ``polar_contact_count``,
+  ``salt_bridge_count``), widening its feature vector. Consumers that hard-code
+  the column count should regenerate it via ``descriptor_feature_names("native-3d")``.
+  ``native-basic`` and ``rdkit-basic`` are unchanged.
 
 ## [0.12.0] - 2026-06-02
 

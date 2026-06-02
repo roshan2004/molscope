@@ -7,6 +7,8 @@ from molscope.descriptors import (
     RDKIT_BASIC_DESCRIPTORS,
     _pairwise_distance_histogram,
     _pairwise_distances,
+    _polar_contact_count,
+    _salt_bridge_count,
     descriptor_feature_names,
     flatten_descriptors,
     inertia_tensor,
@@ -202,3 +204,62 @@ def test_rdkit_basic_descriptor_preset_is_stable():
     for name in RDKIT_BASIC_DESCRIPTORS:
         assert f"rdkit_{name}" in desc
     assert set(flatten_descriptors(desc)) == set(descriptor_feature_names("rdkit-basic"))
+
+
+# -- SASA + interaction descriptors (native-3d) -----------------------------
+
+
+def test_native_3d_includes_surface_and_interaction_features():
+    desc = water().descriptors(preset="native-3d", sasa_n_points=24)
+    for key in (
+        "sasa_total", "sasa_mean", "sasa_std", "sasa_max",
+        "polar_contact_count", "salt_bridge_count",
+    ):
+        assert key in desc
+    assert desc["sasa_total"] > 0.0           # water has exposed surface
+    # the lighter presets stay free of these (and of the SASA cost)
+    basic = water().descriptors(preset="native-basic")
+    assert "sasa_total" not in basic and "salt_bridge_count" not in basic
+
+
+def test_salt_bridge_count_detects_basic_acidic_pair():
+    near = Molecule(
+        np.array([[0.0, 0, 0], [3.0, 0, 0]]), ["N", "O"],
+        resnames=["ARG", "ASP"], resids=[1, 2], chains=["A", "A"],
+        atom_names=["NH1", "OD1"],
+    )
+    assert _salt_bridge_count(near) == 1
+    far = Molecule(
+        np.array([[0.0, 0, 0], [5.0, 0, 0]]), ["N", "O"],
+        resnames=["ARG", "ASP"], resids=[1, 2], chains=["A", "A"],
+        atom_names=["NH1", "OD1"],
+    )
+    assert _salt_bridge_count(far) == 0
+
+
+def test_salt_bridge_count_zero_without_residue_metadata():
+    assert _salt_bridge_count(Molecule(np.zeros((2, 3)), ["N", "O"])) == 0
+
+
+def test_polar_contact_count_window_and_residue_exclusion():
+    # N/O in different residues at 3.0 A -> one polar contact
+    inter = Molecule(np.array([[0.0, 0, 0], [3.0, 0, 0]]), ["N", "O"],
+                     resids=[1, 2], chains=["A", "A"])
+    assert _polar_contact_count(inter) == 1
+    # same residue -> excluded
+    intra = Molecule(np.array([[0.0, 0, 0], [3.0, 0, 0]]), ["N", "O"],
+                     resids=[1, 1], chains=["A", "A"])
+    assert _polar_contact_count(intra) == 0
+    # outside the [2.5, 3.5] window -> excluded
+    assert _polar_contact_count(
+        Molecule(np.array([[0.0, 0, 0], [4.0, 0, 0]]), ["N", "O"], resids=[1, 2])
+    ) == 0
+    assert _polar_contact_count(
+        Molecule(np.array([[0.0, 0, 0], [2.0, 0, 0]]), ["N", "O"], resids=[1, 2])
+    ) == 0
+
+
+def test_polar_contact_count_ignores_non_polar_elements():
+    # carbons in range must not count; only N/O pairs do
+    mol = Molecule(np.array([[0.0, 0, 0], [3.0, 0, 0]]), ["C", "C"], resids=[1, 2])
+    assert _polar_contact_count(mol) == 0

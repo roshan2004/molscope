@@ -26,6 +26,25 @@ RDKIT_BASIC_DESCRIPTORS = (
     "FractionCSP3",
 )
 
+# SASA point count for the descriptor summary: coarser than the Molecule.sasa
+# default (192) since a summary statistic tolerates a few percent error and the
+# descriptor path is used for batch ML tables where speed matters.
+SASA_DESCRIPTOR_N_POINTS = 96
+
+# Polar-contact proxy: count N/O atom pairs whose separation falls in this window
+# (angstrom). The lower bound excludes directly bonded / 1-3 heavy-atom contacts;
+# the upper bound is the usual hydrogen-bond heavy-atom distance. This is a coarse
+# geometric proxy (no angle or hydrogen-position check), not a validated H-bond.
+POLAR_CONTACT_ELEMENTS = ("N", "O")
+POLAR_CONTACT_MIN = 2.5
+POLAR_CONTACT_MAX = 3.5
+
+# Salt bridge: a basic side-chain nitrogen within this distance of an acidic
+# side-chain oxygen (Barlow-Thornton style). Charged side-chain atom names:
+SALT_BRIDGE_CUTOFF = 4.0
+BASIC_SIDECHAIN_ATOMS = {"ARG": {"NE", "NH1", "NH2"}, "LYS": {"NZ"}, "HIS": {"ND1", "NE2"}}
+ACIDIC_SIDECHAIN_ATOMS = {"ASP": {"OD1", "OD2"}, "GLU": {"OE1", "OE2"}}
+
 
 def descriptors(
     molecule,
@@ -37,6 +56,7 @@ def descriptors(
     distance_chunk_size: int = 1024,
     contact_cutoff: float = 5.0,
     residue_contact_cutoff: float = 8.0,
+    sasa_n_points: int = SASA_DESCRIPTOR_N_POINTS,
     include_rdkit: bool = False,
     rdkit_descriptor_names: Optional[list[str]] = None,
     rdkit_prefix: str = "rdkit_",
@@ -113,6 +133,12 @@ def descriptors(
     desc.update(_bond_length_summary(molecule))
     desc.update(_contact_summary(molecule, contact_cutoff))
     desc.update(_residue_contact_summary(molecule, residue_contact_cutoff))
+    # Surface and interaction features (native-3d only): the SASA scan is the
+    # one costly step here, so skip it for the lighter presets that omit them.
+    if preset in (None, "native-3d"):
+        desc.update(_sasa_summary(molecule, sasa_n_points))
+        desc["polar_contact_count"] = float(_polar_contact_count(molecule))
+        desc["salt_bridge_count"] = float(_salt_bridge_count(molecule))
     if include_rdkit:
         desc.update(_rdkit_descriptors(molecule, rdkit_descriptor_names, rdkit_prefix))
     return _apply_preset(desc, preset, elements_to_count, distance_bins, rdkit_prefix)
@@ -179,6 +205,93 @@ def shape_descriptors(principal_moments, total_mass: float) -> dict:
         "acylindricity": float(c),
         "relative_shape_anisotropy": float(min(max(kappa2, 0.0), 1.0)),
     }
+
+
+def _sasa_summary(molecule, n_points: int) -> dict[str, float]:
+    """Total/mean/std/max of the per-atom solvent-accessible surface area (Å²)."""
+    from .sasa import sasa
+
+    per_atom = sasa(molecule, n_points=n_points)
+    if len(per_atom) == 0:
+        return {"sasa_total": 0.0, "sasa_mean": 0.0, "sasa_std": 0.0, "sasa_max": 0.0}
+    return {
+        "sasa_total": float(per_atom.sum()),
+        "sasa_mean": float(per_atom.mean()),
+        "sasa_std": float(per_atom.std()),
+        "sasa_max": float(per_atom.max()),
+    }
+
+
+def _polar_contact_count(molecule) -> int:
+    """Count N/O atom pairs separated by 2.5-3.5 Å (a coarse polar-contact proxy).
+
+    Same-residue pairs are excluded (so trivial intra-residue geometry does not
+    dominate); the distance window keeps directly bonded heavy atoms out. This is
+    a geometric proxy, not a validated hydrogen-bond count: it ignores bond angles
+    and hydrogen positions.
+    """
+    elements = [e.upper() for e in molecule.elements]
+    idx = np.array(
+        [i for i, e in enumerate(elements) if e in POLAR_CONTACT_ELEMENTS], dtype=int
+    )
+    if len(idx) < 2:
+        return 0
+
+    from .distance import find_contacts
+
+    pairs = find_contacts(molecule.coords[idx], POLAR_CONTACT_MAX)
+    if len(pairs) == 0:
+        return 0
+    a, b = idx[pairs[:, 0]], idx[pairs[:, 1]]
+    dist = np.linalg.norm(molecule.coords[a] - molecule.coords[b], axis=1)
+    keep = dist >= POLAR_CONTACT_MIN
+    if len(molecule.resids):
+        resids = np.asarray(molecule.resids)
+        same = resids[a] == resids[b]
+        if molecule.chains:
+            same &= np.asarray(molecule.chains)[a] == np.asarray(molecule.chains)[b]
+        keep &= ~same
+    return int(keep.sum())
+
+
+def _salt_bridge_count(molecule) -> int:
+    """Count basic/acidic residue pairs bridged within 4 Å (Barlow-Thornton style).
+
+    A salt bridge is a basic side-chain nitrogen (Arg/Lys/His) within
+    ``SALT_BRIDGE_CUTOFF`` of an acidic side-chain oxygen (Asp/Glu). Unique
+    basic↔acidic residue pairs are counted, so a residue pair with several close
+    atom pairs still counts once. Needs residue and atom-name metadata; returns 0
+    otherwise (e.g. small molecules).
+    """
+    names, resnames = molecule.atom_names, molecule.resnames
+    if not names or not resnames or not len(molecule.resids):
+        return 0
+    upper = [r.upper() for r in resnames]
+    basic = [
+        i for i in range(len(molecule))
+        if upper[i] in BASIC_SIDECHAIN_ATOMS and names[i] in BASIC_SIDECHAIN_ATOMS[upper[i]]
+    ]
+    acidic = [
+        i for i in range(len(molecule))
+        if upper[i] in ACIDIC_SIDECHAIN_ATOMS and names[i] in ACIDIC_SIDECHAIN_ATOMS[upper[i]]
+    ]
+    if not basic or not acidic:
+        return 0
+    dist = np.linalg.norm(
+        molecule.coords[basic][:, None, :] - molecule.coords[acidic][None, :, :], axis=2
+    )
+    bi, ai = np.nonzero(dist <= SALT_BRIDGE_CUTOFF)
+    chains = molecule.chains or [""] * len(molecule)
+    icodes = molecule.icodes or [""] * len(molecule)
+    resids = molecule.resids
+    pairs = {
+        (
+            (chains[basic[x]], int(resids[basic[x]]), icodes[basic[x]]),
+            (chains[acidic[y]], int(resids[acidic[y]]), icodes[acidic[y]]),
+        )
+        for x, y in zip(bi, ai)
+    }
+    return len(pairs)
 
 
 def featurize_many(
@@ -262,6 +375,12 @@ def _empty_descriptors(desc: dict, distance_bins: int) -> dict:
         "asphericity": 0.0,
         "acylindricity": 0.0,
         "relative_shape_anisotropy": 0.0,
+        "sasa_total": 0.0,
+        "sasa_mean": 0.0,
+        "sasa_std": 0.0,
+        "sasa_max": 0.0,
+        "polar_contact_count": 0.0,
+        "salt_bridge_count": 0.0,
         "distance_histogram": [0.0] * distance_bins,
         "bond_count": 0.0,
         "bond_length_mean": 0.0,
@@ -459,6 +578,12 @@ def _preset_scalar_names(preset: str, elements_to_count, rdkit_prefix: str) -> l
             "asphericity",
             "acylindricity",
             "relative_shape_anisotropy",
+            "sasa_total",
+            "sasa_mean",
+            "sasa_std",
+            "sasa_max",
+            "polar_contact_count",
+            "salt_bridge_count",
         ]
     if preset == "rdkit-basic":
         names += [f"{rdkit_prefix}{name}" for name in RDKIT_BASIC_DESCRIPTORS]
