@@ -589,6 +589,27 @@ def test_to_pyg_data_is_covalent_flag():
     assert not bool(data.is_covalent.all())
 
 
+def test_to_pyg_data_edge_attrs_track_global_node_and_self_loops():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    data = water().to_graph().to_pyg_data(
+        include_global_node=True, include_self_loops=True, include_displacement=True
+    )
+    n_edges = data.edge_index.shape[1]
+    assert data.is_covalent.shape == (n_edges,)
+    assert data.edge_vec.shape == (n_edges, 3)
+    # the 4 real directed bond edges are covalent; global/self-loop edges are not
+    assert int(data.is_covalent.sum()) == 4
+
+
+def test_to_pyg_data_displacement_handles_edgeless_graph():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    lone = Molecule(np.zeros((1, 3)), ["C"]).to_graph().to_pyg_data(include_displacement=True)
+    assert lone.edge_vec.shape == (0, 3)
+    assert lone.is_covalent.shape == (0,)
+
+
 def test_to_dgl_graph():
     pytest.importorskip("dgl")
     pytest.importorskip("torch")
@@ -600,6 +621,18 @@ def test_to_dgl_graph():
     assert g.edata["bond_order"].shape == (4,)
     assert g.edata["is_covalent"].shape == (4,)
     assert g.edata["edge_vec"].shape == (4, 3)
+
+
+def test_to_dgl_graph_edge_attrs_track_global_node_and_self_loops():
+    pytest.importorskip("dgl")
+    pytest.importorskip("torch")
+    g = water().to_graph().to_dgl_graph(
+        include_global_node=True, include_self_loops=True, include_displacement=True
+    )
+    n_edges = g.num_edges()
+    assert g.edata["is_covalent"].shape == (n_edges,)
+    assert g.edata["edge_vec"].shape == (n_edges, 3)
+    assert int(g.edata["is_covalent"].sum()) == 4
 
 
 def test_residue_contact_graph_to_pyg_data():
