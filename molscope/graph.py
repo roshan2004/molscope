@@ -1226,7 +1226,7 @@ def delaunay_edges(coords: np.ndarray) -> np.ndarray:
         # Retry with Qhull's joggle for near-degenerate (coplanar) inputs.
         try:
             simplices = Delaunay(coords, qhull_options="QJ").simplices
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover - QJ resolves all realistic cases
             raise ValueError(
                 f"Delaunay triangulation failed ({exc}); the structure may be "
                 "degenerate (collinear or coplanar atoms)"

@@ -254,6 +254,17 @@ def test_delaunay_small_sets_are_complete_graphs():
     assert len(delaunay_edges(np.array([[0.0, 0, 0], [1, 0, 0], [2, 1, 0]]))) == 3
 
 
+def test_delaunay_coplanar_input_uses_joggle_fallback():
+    pytest.importorskip("scipy")
+    from molscope.graph import delaunay_edges
+
+    # All atoms in the z=0 plane: precise Delaunay fails, the QJ joggle recovers.
+    grid = np.array([[x, y, 0.0] for x in range(3) for y in range(3)], dtype=float)
+    edges = delaunay_edges(grid)
+    assert len(edges) > 0
+    assert (edges[:, 0] < edges[:, 1]).all()
+
+
 def test_to_graph_delaunay_builds_edges():
     pytest.importorskip("scipy")
     # a single tetrahedron is one simplex -> complete graph on 4 atoms
