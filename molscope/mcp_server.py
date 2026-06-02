@@ -378,6 +378,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         include_chemical_features: bool = False,
         knn: Optional[int] = None,
         radius: Optional[float] = None,
+        delaunay: bool = False,
         min_seq_sep: int = 0,
     ) -> str:
         """Summarise the atom/bond molecular graph MolScope would export for ML.
@@ -386,11 +387,12 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         and the ordered node/edge feature names for ``preset``. Set
         ``include_chemical_features=True`` to attach RDKit-backed aromatic flags
         (needs the ``chem`` extra). For spatial-proximity graphs pass ``knn=k``
-        (each atom's ``k`` nearest neighbours) or ``radius=r`` (all pairs within
-        ``r`` angstrom) instead of covalent bonds, and ``min_seq_sep`` to drop
-        same-chain edges whose residue-id separation is below the threshold
-        (needs residue ids). This describes the graph; use the Python API or CLI
-        to export the actual PyG/DGL/NetworkX object.
+        (each atom's ``k`` nearest neighbours), ``radius=r`` (all pairs within
+        ``r`` angstrom), or ``delaunay=True`` (Delaunay/Voronoi adjacency, needs
+        SciPy) instead of covalent bonds, and ``min_seq_sep`` to drop same-chain
+        edges whose residue-id separation is below the threshold (needs residue
+        ids). This describes the graph; use the Python API or CLI to export the
+        actual PyG/DGL/NetworkX object.
         """
         from .graph import edge_feature_names, node_feature_names
 
@@ -398,6 +400,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             include_chemical_features=include_chemical_features,
             knn=knn,
             radius=radius,
+            delaunay=delaunay,
             min_seq_sep=min_seq_sep,
         )
         node_matrix = graph.node_features(preset)
@@ -408,6 +411,7 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
                 "preset": preset,
                 "knn": knn,
                 "radius": radius,
+                "delaunay": delaunay,
                 "min_seq_sep": min_seq_sep,
                 "node_feature_matrix_shape": list(node_matrix.shape),
                 "node_feature_names": list(node_feature_names(preset)),

@@ -230,6 +230,75 @@ def test_to_graph_radius_and_knn_are_mutually_exclusive():
         line_molecule(4).to_graph(knn=2, radius=2.0)
 
 
+def tetrahedron():
+    coords = np.array([[0.0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    return Molecule(coords, ["C", "C", "C", "C"], name="tetra")
+
+
+def test_delaunay_edges_helper_undirected_and_loop_free():
+    pytest.importorskip("scipy")
+    from molscope.graph import delaunay_edges
+
+    rng = np.random.RandomState(0)
+    edges = delaunay_edges(rng.rand(12, 3))
+    assert edges.shape[1] == 2
+    assert (edges[:, 0] < edges[:, 1]).all()  # i < j, no self-loops
+    assert len(edges) == len({tuple(e) for e in edges})  # unique
+
+
+def test_delaunay_small_sets_are_complete_graphs():
+    from molscope.graph import delaunay_edges
+
+    # < 4 atoms: complete graph without invoking Qhull
+    assert len(delaunay_edges(np.zeros((1, 3)))) == 0
+    assert len(delaunay_edges(np.array([[0.0, 0, 0], [1, 0, 0], [2, 1, 0]]))) == 3
+
+
+def test_delaunay_coplanar_input_uses_joggle_fallback():
+    pytest.importorskip("scipy")
+    from molscope.graph import delaunay_edges
+
+    # All atoms in the z=0 plane: precise Delaunay fails, the QJ joggle recovers.
+    grid = np.array([[x, y, 0.0] for x in range(3) for y in range(3)], dtype=float)
+    edges = delaunay_edges(grid)
+    assert len(edges) > 0
+    assert (edges[:, 0] < edges[:, 1]).all()
+
+
+def test_to_graph_delaunay_builds_edges():
+    pytest.importorskip("scipy")
+    # a single tetrahedron is one simplex -> complete graph on 4 atoms
+    g = tetrahedron().to_graph(delaunay=True)
+    assert g.n_bonds == 6
+    np.testing.assert_array_equal(g.edge_types, np.ones(g.n_bonds))
+
+
+def test_to_graph_delaunay_is_mutually_exclusive_with_other_modes():
+    with pytest.raises(ValueError, match="at most one"):
+        tetrahedron().to_graph(delaunay=True, knn=2)
+
+
+def test_to_graph_delaunay_respects_min_seq_sep():
+    pytest.importorskip("scipy")
+    mol = Molecule(
+        tetrahedron().coords, ["C"] * 4, resids=[1, 1, 2, 2], chains=["A"] * 4
+    )
+    g = mol.to_graph(delaunay=True, min_seq_sep=1)
+    resids = np.array([1, 1, 2, 2])
+    seps = np.abs(resids[g.edges[:, 0]] - resids[g.edges[:, 1]])
+    assert (seps >= 1).all()  # intra-residue Delaunay edges dropped
+
+
+def test_delaunay_requires_scipy(monkeypatch):
+    import sys
+
+    from molscope.graph import delaunay_edges
+
+    monkeypatch.setitem(sys.modules, "scipy.spatial", None)
+    with pytest.raises(ImportError, match="SciPy"):
+        delaunay_edges(np.random.RandomState(1).rand(8, 3))
+
+
 def test_min_seq_sep_drops_local_same_chain_edges():
     g = residue_toy().to_graph(knn=2)
     before = g.n_bonds

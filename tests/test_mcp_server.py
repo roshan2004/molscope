@@ -167,6 +167,13 @@ def test_molecular_graph_radius_mode(server):
     assert out["n_edges"] > covalent["n_edges"]
 
 
+def test_molecular_graph_delaunay_mode(server):
+    pytest.importorskip("scipy")
+    out = _json(server, "molecular_graph", source=UBQ, delaunay=True)
+    assert out["delaunay"] is True
+    assert out["n_edges"] > 0
+
+
 def test_coarse_grain(server):
     out = _json(server, "coarse_grain", source=UBQ, mapping="residue_com")
     assert out["mapping"] == "residue_com"

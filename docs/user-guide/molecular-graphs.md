@@ -57,6 +57,7 @@ instead, which `to_graph` supports directly:
 ```python
 g = mol.to_graph(knn=12)                   # k-nearest-neighbour edges
 g = mol.to_graph(radius=8.0)               # all atom pairs within 8 Å
+g = mol.to_graph(delaunay=True)            # Delaunay / Voronoi adjacency
 g = mol.to_graph(knn=12, min_seq_sep=3)    # k-NN, minus trivial local contacts
 g = mol.to_graph(min_seq_sep=3)            # filter covalent/inferred bonds too
 ```
@@ -66,8 +67,18 @@ The per-node neighbour lists are symmetrised by union, so an edge survives when
 either endpoint ranks the other among its `k` nearest. `k` is capped at `n - 1`.
 
 `radius=r` connects every atom pair within `r` angstrom, reusing the same fast
-KD-tree / cell-list search as `Molecule.contacts`. At most one of `knn`,
-`radius` and an explicit `bonds=` array may be given.
+KD-tree / cell-list search as `Molecule.contacts`.
+
+`delaunay=True` builds edges from the 3D Delaunay triangulation — equivalently,
+Voronoi adjacency — a threshold-free, density-adaptive graph that avoids the
+dense-core/exposed-loop disparities of a fixed cutoff. It requires SciPy (the
+`[fast]` extra); unlike `knn`/`radius` there is no pure-NumPy fallback. Note that
+a raw Delaunay graph introduces some long edges across surface concavities and
+the convex hull, so pair it with `min_seq_sep` (or filter by `edge_distances`)
+when those matter.
+
+At most one of `knn`, `radius`, `delaunay` and an explicit `bonds=` array may be
+given.
 
 `min_seq_sep` drops same-chain edges whose residue-id separation
 `|resid_i - resid_j|` is below the threshold — the standard way to remove
