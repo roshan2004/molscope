@@ -89,3 +89,23 @@ All four writers are dependency-free and round-trip with the matching readers.
 Two scope limits worth knowing: SDF is an atom-and-bond format (no chain/residue
 metadata) capped at 999 atoms/bonds by V2000, and `write_cif` emits a *coordinate*
 mmCIF — an `_atom_site` loop only, with no symmetry, anisotropy, or bonds.
+
+### Multi-frame output
+
+`write_frames` is the write-side counterpart to the multi-frame readers and
+`stream`: it takes a list **or a generator** of molecules and appends them one at
+a time, so you can filter, slice, or align an ensemble or trajectory-lite stream
+and save the subset without holding it all in memory. The format follows the
+extension and it returns the number of frames written.
+
+```python
+frames = (m for m in ms.stream("traj.pdb") if m.radius_of_gyration < 15)
+n = ms.write_frames(frames, "compact.pdb")   # MODEL/ENDMDL blocks
+ms.write_frames(models, "ensemble.xyz")      # concatenated XYZ frames
+ms.write_frames(poses, "hits.sdf")           # $$$$-delimited records, bonds kept
+```
+
+Supports `.pdb`/`.xyz`/`.sdf` (not mmCIF, which has no multi-frame form). Frames
+need not share an atom count, so varied SDF records are fine. Multi-frame PDB
+omits `CONECT` (per-model serials make a single global record ambiguous), so bonds
+are re-inferred on read; use `.sdf` if you need per-frame bonds.

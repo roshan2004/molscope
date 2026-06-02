@@ -11,8 +11,11 @@ from molscope.io import (
     read_pdb,
     read_pdb_models,
     read_sdf,
+    read_sdf_frames,
     read_xyz,
+    read_xyz_frames,
     write_cif,
+    write_frames,
     write_pdb,
     write_sdf,
     write_xyz,
@@ -499,3 +502,67 @@ def test_write_cif_marks_hetatm(tmp_path):
     assert "HETATM" in text
     back = read_cif(str(path))
     assert list(back.hetero) == [True, True]
+
+
+# -- multi-frame writers (write_frames) -------------------------------------
+
+
+def _three_frames():
+    base = np.array([[0.0, 0, 0], [1.0, 0, 0], [2.0, 0, 0]])
+    return [
+        Molecule(base + shift, ["C", "C", "O"], name=f"frame{i}")
+        for i, shift in enumerate([0.0, 0.5, 1.0])
+    ]
+
+
+def test_write_frames_xyz_round_trips(tmp_path):
+    frames = _three_frames()
+    path = tmp_path / "traj.xyz"
+    n = write_frames(frames, str(path))
+    assert n == 3
+    back = read_xyz_frames(str(path))
+    assert len(back) == 3
+    for got, want in zip(back, frames):
+        assert np.allclose(got.coords, want.coords, atol=1e-6)
+
+
+def test_write_frames_pdb_round_trips_models(tmp_path):
+    models = read_pdb_models(os.path.join(DATA, "1aml.pdb"))[:3]
+    path = tmp_path / "ensemble.pdb"
+    n = write_frames(models, str(path))
+    assert n == 3
+    text = path.read_text()
+    assert text.count("MODEL ") == 3 and "ENDMDL" in text
+    back = read_pdb_models(str(path))
+    assert len(back) == 3
+    assert np.allclose(back[2].coords, models[2].coords, atol=1e-3)
+
+
+def test_write_frames_accepts_a_generator_streaming(tmp_path):
+    path = tmp_path / "gen.xyz"
+    n = write_frames((m for m in _three_frames()), str(path))
+    assert n == 3
+    assert len(read_xyz_frames(str(path))) == 3
+
+
+def test_write_frames_sdf_handles_varied_molecules(tmp_path):
+    a = Molecule(np.array([[0.0, 0, 0], [1.2, 0, 0]]), ["C", "O"],
+                 bond_index=[[0, 1]], bond_orders=[2], name="CO")
+    b = Molecule(np.array([[0.0, 0, 0], [1.0, 0, 0], [2.0, 0, 0]]), ["O", "C", "O"],
+                 bond_index=[[0, 1], [1, 2]], bond_orders=[2, 2], name="CO2")
+    path = tmp_path / "poses.sdf"
+    assert write_frames([a, b], str(path)) == 2
+    back = read_sdf_frames(str(path))
+    assert [len(m) for m in back] == [2, 3]            # different atom counts ok
+    assert back[1].bond_index is not None              # SDF keeps per-record bonds
+
+
+def test_write_frames_rejects_cif(tmp_path):
+    with pytest.raises(ValueError, match="multi-frame"):
+        write_frames(_three_frames(), str(tmp_path / "x.cif"))
+
+
+def test_write_frames_empty_is_valid(tmp_path):
+    path = tmp_path / "empty.pdb"
+    assert write_frames([], str(path)) == 0
+    assert read_pdb_models(str(path)) == [] or len(read_pdb_models(str(path))) == 0

@@ -11,6 +11,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``write_frames(frames, path)``: the write-side counterpart to the multi-frame
+  readers and ``stream`` — write a list **or generator** of molecules to a
+  multi-frame file, consuming frames one at a time so memory stays O(1). The
+  format follows the extension: ``.pdb``/``.ent`` as ``MODEL``/``ENDMDL`` blocks,
+  ``.xyz`` as concatenated frames, ``.sdf``/``.mol`` as ``$$$$``-delimited V2000
+  records (each keeping its own bonds/charges/properties). Returns the frame
+  count. Frames need not share an atom count (varied SDF records are fine);
+  multi-frame PDB omits ``CONECT`` (per-model serials make a single global record
+  ambiguous, so bonds are re-inferred on read — use ``.sdf`` for per-frame bonds);
+  mmCIF is unsupported (no multi-frame form). Pure Python/NumPy, no new
+  dependencies; lets you filter/slice/align an ensemble or trajectory-lite stream
+  and save the subset.
+
 - Surface and interaction descriptors in the ``native-3d`` preset, all pure-NumPy
   with no new dependencies: SASA summary statistics (``sasa_total``,
   ``sasa_mean``, ``sasa_std``, ``sasa_max``) from the existing Shrake-Rupley

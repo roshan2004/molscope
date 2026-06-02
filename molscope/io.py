@@ -701,8 +701,8 @@ def write_pdb(molecule: Molecule, path: str) -> None:
         f.write(_molecule_to_pdb_string(molecule))
 
 
-def _molecule_to_pdb_string(molecule: Molecule) -> str:
-    """Serialise a molecule to PDB text, preserving metadata when present."""
+def _pdb_atom_lines(molecule: Molecule) -> list[str]:
+    """The ATOM/HETATM lines for a molecule, preserving metadata when present."""
     n = len(molecule)
     names = molecule.atom_names or [e or "X" for e in molecule.elements]
     resnames = molecule.resnames or ["MOL"] * n
@@ -710,7 +710,7 @@ def _molecule_to_pdb_string(molecule: Molecule) -> str:
     resids = molecule.resids if len(molecule.resids) else np.ones(n, dtype=int)
     icodes = molecule.icodes or [""] * n
     heteros = molecule.hetero if len(molecule.hetero) else [False] * n
-    lines = [
+    return [
         _pdb_atom_line(
             serial + 1, names[serial], resnames[serial], chains[serial] or "A",
             int(resids[serial]), molecule.elements[serial], *molecule.coords[serial],
@@ -718,6 +718,11 @@ def _molecule_to_pdb_string(molecule: Molecule) -> str:
         )
         for serial in range(n)
     ]
+
+
+def _molecule_to_pdb_string(molecule: Molecule) -> str:
+    """Serialise a molecule to PDB text, preserving metadata when present."""
+    lines = _pdb_atom_lines(molecule)
     if molecule.bond_index is not None:
         lines.extend(
             _pdb_conect_line(int(i) + 1, int(j) + 1)
@@ -758,6 +763,70 @@ def write_cif(molecule: Molecule, path: str) -> None:
     """
     with _open(path, "w") as f:
         f.write(_molecule_to_cif_string(molecule))
+
+
+def write_frames(frames, path: str) -> int:
+    """Write an iterable of molecules to a multi-frame file (format by extension).
+
+    The write-side counterpart to :func:`read_pdb_models`, :func:`read_xyz_frames`,
+    :func:`read_sdf_frames` and :func:`stream`: it consumes ``frames`` (a list or
+    a generator) one at a time and appends each to ``path``, so memory stays O(1)
+    in the number of frames. Returns the number of frames written. The format is
+    chosen from the extension (``.gz`` is honoured):
+
+    - ``.pdb``/``.ent`` -> ``MODEL``/``ENDMDL`` blocks. Atom serials reset per
+      model, so ``CONECT`` records are **not** written (bonds are re-inferred on
+      read); use ``.sdf`` if you need per-frame bonds.
+    - ``.xyz`` -> concatenated XYZ frames.
+    - ``.sdf``/``.mol`` -> one V2000 record per frame, ``$$$$``-delimited, each
+      carrying its own bonds, charges and properties.
+
+    Frames need not share an atom count (so varied SDF records are fine). mmCIF is
+    not supported, as it has no simple multi-frame concatenation.
+    """
+    name = path[:-3] if path.lower().endswith(".gz") else path
+    ext = os.path.splitext(name)[1].lower()
+    writers = {
+        ".pdb": _write_pdb_frames, ".ent": _write_pdb_frames,
+        ".xyz": _write_xyz_frames,
+        ".sdf": _write_sdf_frames, ".mol": _write_sdf_frames,
+    }
+    if ext not in writers:
+        raise ValueError(
+            f"write_frames supports .pdb, .xyz and .sdf (got {ext!r}); "
+            "mmCIF has no multi-frame form"
+        )
+    with _open(path, "w") as handle:
+        return writers[ext](handle, frames)
+
+
+def _write_xyz_frames(handle, frames) -> int:
+    count = 0
+    for molecule in frames:
+        handle.write(f"{len(molecule)}\n{molecule.name}\n")
+        for element, (x, y, z) in zip(molecule.elements, molecule.coords):
+            handle.write(f"{element or 'X':<2} {x:15.8f} {y:15.8f} {z:15.8f}\n")
+        count += 1
+    return count
+
+
+def _write_pdb_frames(handle, frames) -> int:
+    count = 0
+    for molecule in frames:
+        handle.write(f"MODEL     {count + 1:>4d}\n")
+        handle.writelines(_pdb_atom_lines(molecule))
+        handle.write("ENDMDL\n")
+        count += 1
+    handle.write("END\n")
+    return count
+
+
+def _write_sdf_frames(handle, frames) -> int:
+    count = 0
+    for molecule in frames:
+        handle.write(_molecule_to_sdf_string(molecule))
+        count += 1
+    return count
 
 
 def _molecule_to_sdf_string(molecule: Molecule) -> str:
