@@ -382,6 +382,31 @@ def plot_rmsd_heatmap(matrix, order=None, ax=None, cmap="viridis", show: bool = 
     return ax
 
 
+def plot_cross_correlation(matrix, ax=None, cmap="RdBu_r", show: bool = True):
+    """Draw a dynamical cross-correlation matrix (DCCM) as a heatmap.
+
+    Values run from -1 (anticorrelated) through 0 to +1 (correlated); the
+    diverging colormap is centred at zero so coupled regions stand out. Returns
+    the matplotlib ``Axes``.
+    """
+    import matplotlib.pyplot as plt
+
+    matrix = np.asarray(matrix, dtype=float)
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5, 4))
+    im = ax.imshow(
+        matrix, origin="lower", interpolation="nearest",
+        cmap=cmap, vmin=-1.0, vmax=1.0,
+    )
+    ax.set_xlabel("atom index")
+    ax.set_ylabel("atom index")
+    ax.figure.colorbar(im, ax=ax, label="correlation", fraction=0.046, pad=0.04)
+    ax.set_title("dynamical cross-correlation")
+    if show:
+        plt.show()
+    return ax
+
+
 def _colors(molecule, color_by: str):
     if color_by == "element":
         return [elements.color(e) for e in molecule.elements]
