@@ -78,6 +78,7 @@ from .ensemble import contact_frequency as ensemble_contact_frequency
 from .graph import (
     MolecularGraph,
     ResidueContactGraph,
+    delaunay_edges,
     edge_feature_names,
     knn_edges,
     node_feature_names,
@@ -190,6 +191,7 @@ __all__ = [
     "cross_correlation",
     "node_feature_names",
     "knn_edges",
+    "delaunay_edges",
     "to_rdkit",
     "validate_cif",
     "prepare_structure",

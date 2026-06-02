@@ -53,16 +53,22 @@ API changes; these are called out under **Changed** where they occur.
   shortcuts) now accept ``knn=k`` to build edges from each atom's ``k`` nearest
   neighbours by Euclidean distance (union-symmetrised, capped at ``n - 1``) or
   ``radius=r`` to connect every atom pair within ``r`` angstrom (reusing the fast
-  ``contacts`` KD-tree / cell-list search) — the standard ways to build graphs
-  for 3D macromolecular GNNs. At most one of ``knn``, ``radius`` and an explicit
-  ``bonds=`` array may be given. ``min_seq_sep`` drops same-chain edges whose
-  residue-id separation is below the threshold (filtering trivial local backbone
-  contacts) and applies to every edge mode; inter-chain edges are always kept.
-  All three are exposed on the ``export`` CLI subcommand
-  (``--knn``/``--radius``/``--min-seq-sep``) and the ``molecular_graph`` MCP tool,
-  and the k-NN building block is published as ``molscope.knn_edges``. As part of
-  this, ``include_chemical_features`` now aligns RDKit aromatic flags for
-  explicit and geometric edge sets too, not only inferred covalent bonds.
+  ``contacts`` KD-tree / cell-list search), or ``delaunay=True`` to build the
+  Delaunay triangulation / Voronoi-adjacency graph — a threshold-free,
+  density-adaptive option that avoids the dense-core/exposed-loop disparities of
+  a fixed cutoff (requires SciPy; unlike k-NN/radius it has no pure-NumPy
+  fallback, and a raw Delaunay graph adds some long convex-hull/surface edges
+  best pruned with ``min_seq_sep`` or a distance filter). These are the standard
+  ways to build graphs for 3D macromolecular GNNs. At most one of ``knn``,
+  ``radius``, ``delaunay`` and an explicit ``bonds=`` array may be given.
+  ``min_seq_sep`` drops same-chain edges whose residue-id separation is below the
+  threshold (filtering trivial local backbone contacts) and applies to every edge
+  mode; inter-chain edges are always kept. All are exposed on the ``export`` CLI
+  subcommand (``--knn``/``--radius``/``--delaunay``/``--min-seq-sep``) and the
+  ``molecular_graph`` MCP tool, and the ``knn_edges``/``delaunay_edges`` building
+  blocks are published on the package. As part of this,
+  ``include_chemical_features`` now aligns RDKit aromatic flags for explicit and
+  geometric edge sets too, not only inferred covalent bonds.
 
 - Registration instructions for the MCP server with **Codex CLI**
   (`~/.codex/config.toml` / `codex mcp add`) and **Gemini CLI**

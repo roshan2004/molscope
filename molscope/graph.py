@@ -1188,6 +1188,58 @@ def seq_sep_mask(edges, resids, chains, min_seq_sep: int) -> np.ndarray:
     return ~(same_chain & (sep < min_seq_sep))
 
 
+def delaunay_edges(coords: np.ndarray) -> np.ndarray:
+    """Undirected Delaunay-triangulation edges as unique ``(i, j)`` pairs, ``i < j``.
+
+    Two atoms are linked when they share an edge of the 3D Delaunay
+    tetrahedralization — equivalently, when their Voronoi cells share a facet.
+    This adapts to local density without any distance threshold, the usual reason
+    to prefer it over k-NN or a fixed radius. Like any raw Delaunay graph it does
+    introduce some long edges across surface concavities and the convex hull, so
+    combine it with ``min_seq_sep`` or a distance cap when those matter.
+
+    Requires SciPy (``pip install "molscope[fast]"``): unlike the k-NN and radius
+    modes there is no pure-NumPy fallback for a 3D triangulation. Fewer than four
+    atoms yield the complete graph; Qhull's joggle option handles near-degenerate
+    (coplanar/collinear) coordinates.
+    """
+    coords = np.asarray(coords, dtype=float)
+    n = len(coords)
+    if n < 2:
+        return np.empty((0, 2), dtype=int)
+    if n < 4:
+        # A tetrahedralization needs >= 4 non-coplanar points; below that the
+        # Delaunay graph degenerates to the complete graph.
+        i, j = np.triu_indices(n, k=1)
+        return np.stack([i, j], axis=1).astype(int)
+
+    try:
+        from scipy.spatial import Delaunay
+    except ImportError as exc:
+        raise ImportError(
+            "delaunay edges need SciPy; install it with: pip install 'molscope[fast]'"
+        ) from exc
+
+    try:
+        simplices = Delaunay(coords).simplices  # (M, 4) tetra
+    except Exception:
+        # Retry with Qhull's joggle for near-degenerate (coplanar) inputs.
+        try:
+            simplices = Delaunay(coords, qhull_options="QJ").simplices
+        except Exception as exc:
+            raise ValueError(
+                f"Delaunay triangulation failed ({exc}); the structure may be "
+                "degenerate (collinear or coplanar atoms)"
+            ) from exc
+
+    # The six undirected edges of every tetrahedron, deduplicated.
+    src = simplices[:, (0, 0, 0, 1, 1, 2)].reshape(-1)
+    dst = simplices[:, (1, 2, 3, 2, 3, 3)].reshape(-1)
+    lo = np.minimum(src, dst)
+    hi = np.maximum(src, dst)
+    return np.unique(np.stack([lo, hi], axis=1), axis=0).astype(int)
+
+
 def residue_contact_graph(
     molecule,
     cutoff: float = 8.0,

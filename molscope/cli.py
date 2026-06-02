@@ -111,6 +111,10 @@ def main(argv=None) -> int:
         help="build edges between all atom pairs within R angstrom instead of bonds",
     )
     export_parser.add_argument(
+        "--delaunay", action="store_true",
+        help="build edges from the Delaunay triangulation instead of bonds (needs SciPy)",
+    )
+    export_parser.add_argument(
         "--min-seq-sep", type=int, default=0, metavar="N",
         help="drop same-chain edges with residue-id separation below N (needs residue ids)",
     )
@@ -849,6 +853,8 @@ def _run_export(args: argparse.Namespace) -> int:
         graph_kwargs["knn"] = args.knn
     if args.radius is not None:
         graph_kwargs["radius"] = args.radius
+    if args.delaunay:
+        graph_kwargs["delaunay"] = True
     worker = partial(
         _export_one, to_fmt=args.to, out_dir=args.out_dir,
         kwargs=kwargs, graph_kwargs=graph_kwargs,

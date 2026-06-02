@@ -1082,6 +1082,7 @@ class Molecule:
         infer_orders: bool = False,
         knn: Optional[int] = None,
         radius: Optional[float] = None,
+        delaunay: bool = False,
         min_seq_sep: int = 0,
     ):
         """Build a :class:`molscope.graph.MolecularGraph` from this molecule.
@@ -1100,25 +1101,41 @@ class Molecule:
         proximity, which is standard for macromolecules. ``knn=k`` connects each
         atom to its ``k`` nearest neighbours (symmetrised by union); ``radius=r``
         connects every atom pair within ``r`` angstrom (reusing the fast
-        :meth:`contacts` KD-tree / cell-list search). At most one of ``knn``,
-        ``radius`` and ``bonds`` may be given. ``min_seq_sep`` then drops
-        same-chain edges whose residue-id separation ``|resid_i - resid_j|`` is
-        below the threshold, the usual way to filter out trivial local backbone
-        contacts; it requires residue ids and applies to every edge mode.
+        :meth:`contacts` KD-tree / cell-list search); ``delaunay=True`` uses the
+        Delaunay triangulation (equivalently, Voronoi adjacency), a
+        threshold-free, density-adaptive graph that needs SciPy. At most one of
+        ``knn``, ``radius``, ``delaunay`` and ``bonds`` may be given.
+        ``min_seq_sep`` then drops same-chain edges whose residue-id separation
+        ``|resid_i - resid_j|`` is below the threshold, the usual way to filter
+        out trivial local backbone contacts (and useful for pruning Delaunay's
+        long surface edges); it requires residue ids and applies to every edge
+        mode.
         """
-        from .graph import MolecularGraph, knn_edges, seq_sep_mask
+        from .graph import MolecularGraph, delaunay_edges, knn_edges, seq_sep_mask
 
-        chosen = [
-            name for name, value in (("knn", knn), ("radius", radius), ("bonds", bonds))
-            if value is not None
-        ]
+        chosen = []
+        if knn is not None:
+            chosen.append("knn")
+        if radius is not None:
+            chosen.append("radius")
+        if delaunay:
+            chosen.append("delaunay")
+        if bonds is not None:
+            chosen.append("bonds")
         if len(chosen) > 1:
-            raise ValueError(f"pass at most one of knn, radius, bonds; got {', '.join(chosen)}")
+            raise ValueError(
+                f"pass at most one of knn, radius, delaunay, bonds; got {', '.join(chosen)}"
+            )
 
         # 1. Build the edge set and its matching bond orders.
-        if knn is not None or radius is not None:
+        if knn is not None or radius is not None or delaunay:
             # Geometric edges carry no inherent bond order.
-            edges = knn_edges(self.coords, knn) if knn is not None else self.contacts(cutoff=radius)
+            if delaunay:
+                edges = delaunay_edges(self.coords)
+            elif knn is not None:
+                edges = knn_edges(self.coords, knn)
+            else:
+                edges = self.contacts(cutoff=radius)
             if bond_orders is None:
                 edge_types = (
                     _guess_bond_orders(self.elements, edges.reshape(-1, 2))
