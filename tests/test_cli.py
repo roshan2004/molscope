@@ -1,13 +1,20 @@
 """Tests for CLI argument helpers."""
 
+import os
+
 import pytest
 
+import molscope as ms
 from molscope.cli import (
     _default_to_view,
     _parse_ligand,
     _parse_selection,
     _parse_selection_value,
+    _write_structure,
+    main,
 )
+
+DATA = os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples", "data")
 
 
 def test_default_to_view_keeps_subcommands_and_top_level_help():
@@ -138,3 +145,41 @@ def test_parse_selection_value_hetero_forms():
 
 def test_parse_selection_value_strips_matching_quotes():
     assert _parse_selection_value("resname", "'HOH'") == "HOH"
+
+
+# -- coarse-grain subcommand ------------------------------------------------
+
+
+def test_write_structure_dispatches_by_extension(tmp_path):
+    mol = ms.read(os.path.join(DATA, "1fqy.pdb"))
+    cg = mol.coarse_grain("residue_com")
+    for ext in (".pdb", ".cif", ".xyz"):
+        out = tmp_path / f"cg{ext}"
+        _write_structure(cg, str(out))
+        assert out.exists() and out.stat().st_size > 0
+
+
+def test_write_structure_rejects_unknown_extension(tmp_path):
+    with pytest.raises(ValueError, match="unsupported output extension"):
+        _write_structure(ms.read(os.path.join(DATA, "1fqy.pdb")), str(tmp_path / "x.foo"))
+
+
+def test_coarse_grain_cli_writes_pdb_with_conect(tmp_path):
+    out = tmp_path / "cg.pdb"
+    rc = main(["coarse-grain", os.path.join(DATA, "1fqy.pdb"),
+               "--mapping", "martini", "--out", str(out)])
+    assert rc == 0
+    text = out.read_text()
+    # martini beads are named BB/SC and the bond network is written as CONECT
+    assert "BB " in text and "SC " in text
+    assert "CONECT" in text
+
+
+def test_coarse_grain_cli_summary_only_without_out():
+    assert main(["coarse-grain", os.path.join(DATA, "1fqy.pdb"),
+                 "--mapping", "residue_centroid"]) == 0
+
+
+def test_coarse_grain_cli_bad_extension_returns_error(tmp_path):
+    assert main(["coarse-grain", os.path.join(DATA, "1fqy.pdb"),
+                 "--out", str(tmp_path / "cg.foo")]) == 2
