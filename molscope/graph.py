@@ -37,6 +37,24 @@ RESIDUE_NODE_FEATURE_PRESETS = ("default", "ml")
 RESIDUE_EDGE_FEATURE_PRESETS = ("default", "ml")
 CONTACT_GRAPH_METHODS = ("ca", "com", "min")
 
+# Coarse, mutually-exclusive interaction labels for residue-contact edges, in
+# precedence order (most specific first). These are geometric/contact heuristics
+# from residue chemistry and atom distances, NOT binding-energy terms.
+RESIDUE_INTERACTION_LABELS = (
+    "disulfide", "ligand", "salt_bridge", "covalent", "hydrophobic", "polar", "proximity",
+)
+_STANDARD_AA = set(DEFAULT_RESIDUE_TYPES) - {"UNK"}
+# Solvent is not a "ligand"; its contacts fall through to "proximity".
+_WATER_RESNAMES = {"HOH", "WAT", "H2O", "DOD", "TIP", "TIP3", "SOL"}
+_HYDROPHOBIC_AA = {"ALA", "VAL", "LEU", "ILE", "MET", "PHE", "TRP", "PRO"}
+_POLAR_AA = {"SER", "THR", "ASN", "GLN", "TYR", "CYS", "HIS", "ASP", "GLU", "LYS", "ARG"}
+_BACKBONE_ATOMS = {"N", "CA", "C", "O", "OXT"}
+_BASIC_SIDECHAIN_ATOMS = {"ARG": {"NE", "NH1", "NH2"}, "LYS": {"NZ"}, "HIS": {"ND1", "NE2"}}
+_ACIDIC_SIDECHAIN_ATOMS = {"ASP": {"OD1", "OD2"}, "GLU": {"OE1", "OE2"}}
+_DISULFIDE_CUTOFF = 2.5      # SG-SG (angstrom)
+_SALT_BRIDGE_CUTOFF = 4.0    # charged side-chain N...O
+_SIDECHAIN_CONTACT_CUTOFF = 5.0   # side-chain heavy-atom contact for hydrophobic/polar
+
 
 def _sign_stabilize(vecs: np.ndarray) -> np.ndarray:
     """Fix the (arbitrary) sign of each eigenvector column deterministically.
@@ -704,6 +722,9 @@ class ResidueContactGraph:
     cutoff: float = 8.0
     method: str = "ca"
     name: str = ""
+    # Optional coarse interaction label per contact edge (see
+    # RESIDUE_INTERACTION_LABELS); empty unless built with annotate_interactions.
+    edge_interactions: list[str] = field(default_factory=list)
 
     @property
     def n_residues(self) -> int:
@@ -712,6 +733,21 @@ class ResidueContactGraph:
     @property
     def n_contacts(self) -> int:
         return len(self.edges)
+
+    def interaction_one_hot(self) -> np.ndarray:
+        """One-hot encode the per-edge interaction labels as ``(E, n_labels)``.
+
+        Columns follow :data:`RESIDUE_INTERACTION_LABELS`. All-zero rows mean the
+        graph was built without ``annotate_interactions``. Useful as a categorical
+        edge feature for ML; pair it with :meth:`edge_features`.
+        """
+        out = np.zeros((self.n_contacts, len(RESIDUE_INTERACTION_LABELS)), dtype=float)
+        if not self.edge_interactions:
+            return out
+        index = {label: k for k, label in enumerate(RESIDUE_INTERACTION_LABELS)}
+        for edge, label in enumerate(self.edge_interactions):
+            out[edge, index[label]] = 1.0
+        return out
 
     def adjacency_matrix(self, weighted: bool = False) -> np.ndarray:
         """Return the dense adjacency matrix (R, R)."""
@@ -916,16 +952,19 @@ class ResidueContactGraph:
                 residue_size=int(self.residue_sizes[i]),
                 pos=tuple(float(c) for c in self.coords[i]),
             )
+        interactions = self.edge_interactions
         for edge_idx, ((i, j), dist, edge_type) in enumerate(
             zip(self.edges, self.edge_distances, self.edge_types)
         ):
-            g.add_edge(
-                int(i), int(j),
+            attrs = dict(
                 distance=float(dist),
                 contact_type=edge_type,
                 cutoff=float(self.cutoff),
                 edge_index=edge_idx,
             )
+            if interactions:
+                attrs["interaction"] = interactions[edge_idx]
+            g.add_edge(int(i), int(j), **attrs)
         return g
 
     def to_pyg_data(
@@ -1295,6 +1334,7 @@ def residue_contact_graph(
     device: Optional[str] = None,
     min_seq_sep: int = 0,
     chain_mode: str = "all",
+    annotate_interactions: bool = False,
 ) -> ResidueContactGraph:
     """Build a residue-level spatial contact graph from a molecule.
 
@@ -1302,6 +1342,14 @@ def residue_contact_graph(
     within ``cutoff``. ``"com"`` uses residue centres of mass. ``"min"`` uses
     closest inter-residue atom distance for edges while keeping centre-of-mass
     coordinates as node positions.
+
+    With ``annotate_interactions=True``, each contact edge gets one coarse
+    interaction label (see :data:`RESIDUE_INTERACTION_LABELS`) computed from
+    residue chemistry and atom-level geometry of the source structure. These are
+    geometric/contact heuristics (disulfide, ligand, salt bridge, covalent,
+    hydrophobic, polar, proximity), **not** binding-energy terms; they need
+    per-atom names to resolve the chemistry, degrading to covalent/proximity/
+    ligand otherwise.
     """
     method = method.lower()
     if method not in CONTACT_GRAPH_METHODS:
@@ -1347,6 +1395,10 @@ def residue_contact_graph(
         if len(i) else np.empty((0, 2), dtype=int)
     )
     edge_distances = distances[i, j].astype(float) if len(i) else np.empty(0, dtype=float)
+    edge_interactions = (
+        _residue_interaction_labels(molecule, atom_groups, resnames, resids, chains, edges)
+        if annotate_interactions else []
+    )
     return ResidueContactGraph(
         coords=coords,
         edges=edges,
@@ -1362,7 +1414,62 @@ def residue_contact_graph(
         cutoff=cutoff,
         method=method,
         name=molecule.name,
+        edge_interactions=edge_interactions,
     )
+
+
+def _residue_interaction_labels(molecule, atom_groups, resnames, resids, chains, edges):
+    """One coarse interaction label per contact edge (see RESIDUE_INTERACTION_LABELS)."""
+    coords = np.asarray(molecule.coords, dtype=float)
+    names = molecule.atom_names or []
+
+    def atom_class(idx_list, resname):
+        rn = (resname or "").upper()
+        anames = [(names[i] if names else "").upper() for i in idx_list]
+        return {
+            "resname": rn,
+            "sg": [i for i, a in zip(idx_list, anames) if a == "SG"],
+            "basic": [i for i, a in zip(idx_list, anames)
+                      if rn in _BASIC_SIDECHAIN_ATOMS and a in _BASIC_SIDECHAIN_ATOMS[rn]],
+            "acidic": [i for i, a in zip(idx_list, anames)
+                       if rn in _ACIDIC_SIDECHAIN_ATOMS and a in _ACIDIC_SIDECHAIN_ATOMS[rn]],
+            "sidechain": [i for i, a in zip(idx_list, anames) if a not in _BACKBONE_ATOMS],
+        }
+
+    info = [atom_class(atom_groups[r], resnames[r]) for r in range(len(atom_groups))]
+
+    def min_dist(ia, ib):
+        if not ia or not ib:
+            return np.inf
+        a, b = coords[ia], coords[ib]
+        return float(np.sqrt(((a[:, None, :] - b[None, :, :]) ** 2).sum(-1)).min())
+
+    labels = []
+    for u, v in edges:
+        pu, pv = info[u], info[v]
+        rn_u, rn_v = pu["resname"], pv["resname"]
+        adjacent = chains[u] == chains[v] and abs(int(resids[u]) - int(resids[v])) == 1
+        ligand_u = rn_u not in _STANDARD_AA and rn_u not in _WATER_RESNAMES
+        ligand_v = rn_v not in _STANDARD_AA and rn_v not in _WATER_RESNAMES
+        if rn_u == "CYS" and rn_v == "CYS" and min_dist(pu["sg"], pv["sg"]) < _DISULFIDE_CUTOFF:
+            label = "disulfide"
+        elif ligand_u or ligand_v:
+            label = "ligand"
+        elif min(min_dist(pu["basic"], pv["acidic"]),
+                 min_dist(pu["acidic"], pv["basic"])) < _SALT_BRIDGE_CUTOFF:
+            label = "salt_bridge"
+        elif adjacent:
+            label = "covalent"
+        elif (rn_u in _HYDROPHOBIC_AA and rn_v in _HYDROPHOBIC_AA
+              and min_dist(pu["sidechain"], pv["sidechain"]) < _SIDECHAIN_CONTACT_CUTOFF):
+            label = "hydrophobic"
+        elif (rn_u in _POLAR_AA and rn_v in _POLAR_AA
+              and min_dist(pu["sidechain"], pv["sidechain"]) < _SIDECHAIN_CONTACT_CUTOFF):
+            label = "polar"
+        else:
+            label = "proximity"
+        labels.append(label)
+    return labels
 
 
 def _residue_representative(molecule, idx, method: str) -> np.ndarray:

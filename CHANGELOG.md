@@ -9,6 +9,24 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+### Added
+
+- Optional coarse interaction labels on residue-contact-graph edges.
+  ``to_residue_contact_graph(annotate_interactions=True)`` tags each contact edge
+  with one mutually-exclusive label, computed from residue chemistry and
+  atom-level geometry of the source structure (by precedence, most specific
+  first): ``disulfide`` (CYS SG–SG < 2.5 Å), ``ligand`` (a non-standard, non-water
+  residue), ``salt_bridge`` (basic↔acidic charged side-chain atoms < 4 Å),
+  ``covalent`` (sequence-adjacent same-chain neighbours), ``hydrophobic`` and
+  ``polar`` (both residues of that class with side chains in contact), and
+  ``proximity`` (the fallback, including water contacts). Surfaced as
+  ``ResidueContactGraph.edge_interactions``, a one-hot ``interaction_one_hot()``
+  categorical edge feature, and a NetworkX ``interaction`` edge attribute; the
+  vocabulary is ``molscope.RESIDUE_INTERACTION_LABELS``. These are
+  geometric/contact heuristics, **not** binding-energy terms, and need per-atom
+  names to resolve the chemistry (degrading to covalent/ligand/proximity
+  otherwise). Pure NumPy, no new dependencies; off by default.
+
 ## [0.13.0] - 2026-06-03
 
 ### Added

@@ -660,3 +660,101 @@ def test_residue_contact_graph_to_dgl_graph():
     assert g.num_edges() == 2
     assert g.ndata["feat"].shape == (3, len(residue_node_feature_names("ml")))
     assert g.edata["feat"].shape == (2, len(residue_edge_feature_names("ml")))
+
+
+# -- residue interaction labels ---------------------------------------------
+
+
+def _edge_label(coords, elements, atom_names, resnames, resids, chains=None):
+    """Label the single edge (0,1) of a hand-built two-residue molecule."""
+    from molscope.graph import _residue_interaction_labels
+
+    n = len(elements)
+    chains = chains if chains is not None else ["A"] * n
+    mol = Molecule(np.array(coords, dtype=float), elements, atom_names=atom_names,
+                   resnames=resnames, resids=resids, chains=chains)
+    groups = list(mol.residue_groups())
+    atom_groups = [g.atom_indices for g in groups]
+    rns = [g.residue_id.resname for g in groups]
+    rids = np.array([g.residue_id.resid for g in groups])
+    chs = [g.residue_id.chain for g in groups]
+    return _residue_interaction_labels(mol, atom_groups, rns, rids, chs, np.array([[0, 1]]))[0]
+
+
+def test_interaction_label_disulfide():
+    assert _edge_label(
+        [[0, 0, 0], [1, 0, 0], [5, 0, 0], [2.0, 0, 0]],
+        ["C", "S", "C", "S"], ["CA", "SG", "CA", "SG"],
+        ["CYS", "CYS", "CYS", "CYS"], [1, 1, 2, 2],
+    ) == "disulfide"
+
+
+def test_interaction_label_salt_bridge_beats_adjacency():
+    # Arg NH1 ~2.5 A from Asp OD1; salt_bridge has precedence over covalent.
+    assert _edge_label(
+        [[0, 0, 0], [1, 0, 0], [6, 0, 0], [3.5, 0, 0]],
+        ["C", "N", "C", "O"], ["CA", "NH1", "CA", "OD1"],
+        ["ARG", "ARG", "ASP", "ASP"], [1, 1, 2, 2],
+    ) == "salt_bridge"
+
+
+def test_interaction_label_ligand_but_not_water():
+    assert _edge_label([[0, 0, 0], [5, 0, 0]], ["C", "C"], ["C1", "CA"],
+                       ["BEN", "ALA"], [1, 10]) == "ligand"
+    # water is solvent, not a ligand -> proximity
+    assert _edge_label([[0, 0, 0], [5, 0, 0]], ["O", "C"], ["O", "CA"],
+                       ["HOH", "ALA"], [1, 10]) == "proximity"
+
+
+def test_interaction_label_covalent_for_sequence_neighbours():
+    assert _edge_label([[0, 0, 0], [5, 0, 0]], ["C", "C"], ["CA", "CA"],
+                       ["ALA", "ALA"], [1, 2]) == "covalent"
+
+
+def test_interaction_label_hydrophobic_and_polar_and_proximity():
+    # two LEU side chains in contact, not sequence-adjacent
+    assert _edge_label([[0, 0, 0], [1.0, 0, 0], [9, 0, 0], [3.0, 0, 0]],
+                       ["C", "C", "C", "C"], ["CA", "CD1", "CA", "CD1"],
+                       ["LEU", "LEU", "LEU", "LEU"], [1, 1, 8, 8]) == "hydrophobic"
+    # two SER side chains in contact
+    assert _edge_label([[0, 0, 0], [1.0, 0, 0], [9, 0, 0], [3.0, 0, 0]],
+                       ["C", "O", "C", "O"], ["CA", "OG", "CA", "OG"],
+                       ["SER", "SER", "SER", "SER"], [1, 1, 8, 8]) == "polar"
+    # GLY (no side chain) + ALA, not adjacent -> proximity fallback
+    assert _edge_label([[0, 0, 0], [4, 0, 0]], ["C", "C"], ["CA", "CA"],
+                       ["GLY", "ALA"], [1, 8]) == "proximity"
+
+
+def test_residue_contact_graph_annotation_integration_and_one_hot():
+    from molscope.graph import RESIDUE_INTERACTION_LABELS
+
+    mol = ms.read(os.path.join(DATA, "3ptb.pdb"))
+    g = mol.to_residue_contact_graph(annotate_interactions=True)
+    assert len(g.edge_interactions) == g.n_contacts
+    assert set(g.edge_interactions) <= set(RESIDUE_INTERACTION_LABELS)
+    # trypsin has six disulfide bridges
+    assert g.edge_interactions.count("disulfide") == 6
+    oh = g.interaction_one_hot()
+    assert oh.shape == (g.n_contacts, len(RESIDUE_INTERACTION_LABELS))
+    assert bool((oh.sum(axis=1) == 1).all())
+
+
+def test_residue_contact_graph_unannotated_has_no_labels():
+    g = ms.read(os.path.join(DATA, "3ptb.pdb")).to_residue_contact_graph()
+    assert g.edge_interactions == []
+    assert bool((g.interaction_one_hot() == 0).all())
+
+
+def test_residue_contact_graph_networkx_carries_interaction():
+    pytest.importorskip("networkx")
+    from molscope.graph import RESIDUE_INTERACTION_LABELS
+
+    g = ms.read(os.path.join(DATA, "3ptb.pdb")).to_residue_contact_graph(
+        annotate_interactions=True
+    )
+    interactions = [d["interaction"] for *_, d in g.to_networkx().edges(data=True)]
+    assert len(interactions) == g.n_contacts
+    assert set(interactions) <= set(RESIDUE_INTERACTION_LABELS)
+    # the plain (unannotated) graph omits the attribute
+    plain = ms.read(os.path.join(DATA, "3ptb.pdb")).to_residue_contact_graph().to_networkx()
+    assert all("interaction" not in d for *_, d in plain.edges(data=True))
