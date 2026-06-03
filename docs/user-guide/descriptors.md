@@ -120,6 +120,27 @@ This is an approximation aimed at the descriptors workflow, not a replacement
 for an exact analytical surface; it is not folded into the fixed `descriptors()`
 presets, so those feature columns stay stable.
 
+### Relative solvent accessibility (RSA)
+
+`mol.relative_sasa()` normalises each residue's absolute SASA by a reference
+maximum (Tien et al. 2013) to give RSA, then classifies residues as exposed or
+buried — a high-signal per-residue feature for interface/binding-site work and
+residue-level graphs:
+
+```python
+exp = mol.relative_sasa(threshold=0.20)     # ResidueExposure, per residue
+exp.rsa                                       # relative SASA (NaN where no reference)
+exp.exposed                                   # bool: rsa >= threshold
+exp.sasa                                      # absolute SASA (Å²)
+zip(exp.resnames, exp.resids, exp.exposed)    # label each residue
+```
+
+RSA can slightly exceed 1 (the reference is an extended Gly-X-Gly tripeptide),
+and residues with no reference (ligands, waters, non-standard names) get `NaN`
+RSA and count as not exposed. SASA is computed on the whole structure, so burial
+reflects neighbours. It pairs naturally as a custom node feature on a
+[residue contact graph](molecular-graphs.md).
+
 ## RDKit descriptors
 
 Install the optional chemical backend to access RDKit's scalar descriptor set:

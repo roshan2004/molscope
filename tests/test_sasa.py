@@ -99,3 +99,56 @@ def test_numpy_fallback_matches_scipy(monkeypatch):
 def test_top_level_export_matches_method():
     mol = Molecule(np.array([[0.0, 0, 0], [3.0, 0, 0]]), ["C", "C"])
     np.testing.assert_array_equal(ms.sasa(mol, n_points=128), mol.sasa(n_points=128))
+
+
+# -- relative solvent accessibility (RSA) -----------------------------------
+
+
+def test_max_asa_reference_table():
+    assert elements.max_asa("ALA") == 129.0
+    assert elements.max_asa("trp") == 285.0    # case-insensitive
+    assert elements.max_asa("LIG") is None     # no reference for ligands
+
+
+def _alanine():
+    coords = np.array([[0.0, 0, 0], [1.5, 0, 0], [2.5, 1, 0], [2.5, 2, 0], [1.5, -1.4, 0]])
+    return Molecule(
+        coords, ["N", "C", "C", "O", "C"], name="ala",
+        atom_names=["N", "CA", "C", "O", "CB"], resnames=["ALA"] * 5,
+        resids=[1] * 5, chains=["A"] * 5,
+    )
+
+
+def test_relative_sasa_isolated_residue_is_exposed():
+    exp = _alanine().relative_sasa(n_points=200)
+    assert len(exp) == 1
+    assert np.isfinite(exp.rsa[0]) and exp.rsa[0] > exp.threshold
+    assert bool(exp.exposed[0])
+    assert exp.resnames == ["ALA"]
+
+
+def test_relative_sasa_nan_without_reference():
+    lig = Molecule(
+        np.array([[0.0, 0, 0], [1.5, 0, 0]]), ["C", "O"], name="lig",
+        atom_names=["C1", "O1"], resnames=["LIG", "LIG"], resids=[1, 1], chains=["A", "A"],
+    )
+    exp = lig.relative_sasa(n_points=48)
+    assert np.isnan(exp.rsa[0])
+    assert not bool(exp.exposed[0])
+
+
+def test_relative_sasa_threshold_classification():
+    mol = ms.read(os.path.join(DATA, "1fqy.pdb"))
+    exp = mol.relative_sasa(n_points=48)
+    finite = np.isfinite(exp.rsa)
+    # exposed flag is exactly rsa >= threshold where defined
+    assert np.array_equal(exp.exposed[finite], exp.rsa[finite] >= exp.threshold)
+    assert (exp.rsa[finite] >= 0).all()
+    # a lower threshold cannot expose fewer residues
+    loose = mol.relative_sasa(n_points=48, threshold=0.05)
+    assert int(loose.exposed.sum()) >= int(exp.exposed.sum())
+
+
+def test_relative_sasa_requires_residues():
+    with pytest.raises(ValueError, match="residue"):
+        Molecule(np.zeros((2, 3)), ["C", "C"]).relative_sasa()

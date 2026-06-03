@@ -12,6 +12,8 @@ optional SciPy KD-tree with a NumPy fallback, like the rest of MolScope.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from . import elements
@@ -19,6 +21,7 @@ from . import elements
 DEFAULT_PROBE_RADIUS = 1.4   # water probe, angstrom
 DEFAULT_N_POINTS = 192
 SASA_LEVELS = ("atom", "residue")
+DEFAULT_RSA_THRESHOLD = 0.20   # RSA >= this -> "exposed", else "buried"
 
 
 def _fibonacci_sphere(n: int) -> np.ndarray:
@@ -128,4 +131,59 @@ def sasa(
         raise ValueError("residue-level SASA needs residue information")
     return np.array(
         [per_atom[group.atom_indices].sum() for group in groups], dtype=float
+    )
+
+
+@dataclass
+class ResidueExposure:
+    """Per-residue relative solvent accessibility (RSA), in residue order.
+
+    ``sasa`` is the absolute residue SASA (Å²); ``rsa`` is that divided by the
+    residue's reference maximum (Tien et al. 2013), ``NaN`` where no reference
+    exists (ligands, waters, non-standard residues). ``exposed`` is
+    ``rsa >= threshold`` (``False`` wherever ``rsa`` is ``NaN``). RSA can slightly
+    exceed 1 because the reference is an extended Gly-X-Gly tripeptide.
+    """
+
+    resids: np.ndarray
+    chains: list
+    resnames: list
+    sasa: np.ndarray         # absolute, Å²
+    rsa: np.ndarray          # relative, NaN where no reference
+    exposed: np.ndarray      # bool, rsa >= threshold
+    threshold: float
+
+    def __len__(self) -> int:
+        return len(self.resids)
+
+
+def relative_sasa(
+    molecule,
+    probe_radius: float = DEFAULT_PROBE_RADIUS,
+    n_points: int = DEFAULT_N_POINTS,
+    threshold: float = DEFAULT_RSA_THRESHOLD,
+) -> ResidueExposure:
+    """Relative solvent accessibility (RSA) per residue and an exposed/buried call.
+
+    Computes absolute residue SASA on the whole structure (so burial reflects
+    neighbours) and divides by each residue's reference maximum SASA (Tien et al.
+    2013) to give RSA, then classifies ``rsa >= threshold`` (default ``0.20``) as
+    exposed. Residues without a reference (ligands, waters, non-standard names)
+    get ``NaN`` RSA and are not exposed. Returns a :class:`ResidueExposure` in
+    ``molecule.residue_groups()`` order.
+    """
+    groups = list(molecule.residue_groups())
+    if not groups:
+        raise ValueError("relative SASA needs residue information")
+    absolute = sasa(molecule, probe_radius=probe_radius, n_points=n_points, level="residue")
+    resnames = [group.residue_id.resname for group in groups]
+    resids = np.array([group.residue_id.resid for group in groups], dtype=int)
+    chains = [group.residue_id.chain for group in groups]
+    ref = np.array([elements.max_asa(name) or np.nan for name in resnames], dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rsa = absolute / ref
+    exposed = np.nan_to_num(rsa, nan=-1.0) >= threshold
+    return ResidueExposure(
+        resids=resids, chains=chains, resnames=resnames,
+        sasa=absolute, rsa=rsa, exposed=exposed, threshold=float(threshold),
     )

@@ -1069,6 +1069,21 @@ class Molecule:
 
         return sasa(self, probe_radius=probe_radius, n_points=n_points, level=level)
 
+    def relative_sasa(self, probe_radius: float = 1.4, n_points: int = 192,
+                      threshold: float = 0.20):
+        """Per-residue relative solvent accessibility (RSA) and exposed/buried call.
+
+        Normalises absolute residue SASA by reference maxima (Tien et al. 2013)
+        and flags ``rsa >= threshold`` as exposed. See
+        :func:`molscope.relative_sasa`; returns a
+        :class:`molscope.sasa.ResidueExposure`.
+        """
+        from .sasa import relative_sasa
+
+        return relative_sasa(
+            self, probe_radius=probe_radius, n_points=n_points, threshold=threshold
+        )
+
     def chemical_features(self, **kwargs):
         """Return optional RDKit-backed aromaticity, valence and charge features.
 

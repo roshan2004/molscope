@@ -11,6 +11,18 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``relative_sasa`` (and ``Molecule.relative_sasa``): per-residue relative solvent
+  accessibility (RSA) with an exposed/buried call. Absolute residue SASA is
+  divided by a reference maximum (Tien et al. 2013, added as ``elements.MAX_ASA``
+  / ``elements.max_asa``) and classified ``rsa >= threshold`` (default 0.20) as
+  exposed. Returns a ``ResidueExposure`` (resids, chains, resnames, absolute
+  ``sasa``, ``rsa``, ``exposed``, threshold) in residue order. RSA may slightly
+  exceed 1 (extended-tripeptide reference); residues with no reference (ligands,
+  waters, non-standard names) get ``NaN`` RSA and are not exposed; SASA is
+  computed on the whole structure so burial reflects neighbours. A high-signal
+  per-residue feature for interface/binding-site work and residue graphs. Pure
+  NumPy, no new dependencies; not folded into the fixed descriptor presets.
+
 - ``plot_ramachandran`` (and ``Molecule.plot_ramachandran``): a Ramachandran plot
   of a protein's backbone phi/psi torsions on a ``[-180, 180]`` grid, coloured by
   simplified-DSSP secondary-structure class (``color_by="ss"`` default; pass a

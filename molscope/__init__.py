@@ -116,7 +116,7 @@ from .plotting import (
     plot_rmsd_heatmap,
     view_mapping,
 )
-from .sasa import sasa
+from .sasa import ResidueExposure, relative_sasa, sasa
 from .structure_prep import StructureReport, prepare_structure
 
 __all__ = [
@@ -159,6 +159,8 @@ __all__ = [
     "descriptor_feature_names",
     "descriptors",
     "sasa",
+    "relative_sasa",
+    "ResidueExposure",
     "docking",
     "dssp",
     "ensemble",
