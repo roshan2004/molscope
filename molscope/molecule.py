@@ -1276,12 +1276,14 @@ class Molecule:
         device: str | None = None,
         min_seq_sep: int = 0,
         chain_mode: str = "all",
+        annotate_interactions: bool = False,
     ):
         """Build a residue-level spatial contact graph for graph ML.
 
         Residues become nodes and residue-residue contacts become edges. See
         :func:`molscope.graph.residue_contact_graph` for the construction
-        methods and exporters.
+        methods, exporters, and the optional ``annotate_interactions`` coarse
+        per-edge interaction labels.
         """
         from .graph import residue_contact_graph
 
@@ -1293,6 +1295,7 @@ class Molecule:
             device=device,
             min_seq_sep=min_seq_sep,
             chain_mode=chain_mode,
+            annotate_interactions=annotate_interactions,
         )
 
     def plot(self, **kwargs):

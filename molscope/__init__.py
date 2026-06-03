@@ -77,6 +77,7 @@ from .ensemble import (
 )
 from .ensemble import contact_frequency as ensemble_contact_frequency
 from .graph import (
+    RESIDUE_INTERACTION_LABELS,
     MolecularGraph,
     ResidueContactGraph,
     delaunay_edges,
@@ -193,6 +194,7 @@ __all__ = [
     "rdkit_descriptors",
     "pocket_descriptor_feature_names",
     "residue_contact_graph",
+    "RESIDUE_INTERACTION_LABELS",
     "residue_edge_feature_names",
     "residue_node_feature_names",
     "rmsd_matrix",
