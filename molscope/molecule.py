@@ -811,6 +811,15 @@ class Molecule:
             self.distance_matrix(backend=backend, device=device), **kwargs
         )
 
+    def plot_ramachandran(self, **kwargs):
+        """Ramachandran plot (phi vs psi) of this protein's backbone torsions.
+
+        See :func:`molscope.plotting.plot_ramachandran`.
+        """
+        from .plotting import plot_ramachandran
+
+        return plot_ramachandran(self, **kwargs)
+
     def secondary_structure(self):
         """Assign protein secondary structure with a simplified DSSP.
 

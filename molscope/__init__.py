@@ -112,6 +112,7 @@ from .plotting import (
     plot_cross_correlation,
     plot_distance_matrix,
     plot_mapping,
+    plot_ramachandran,
     plot_rmsd_heatmap,
     view_mapping,
 )
@@ -173,6 +174,7 @@ __all__ = [
     "plot_rmsd_heatmap",
     "plot_distance_matrix",
     "plot_cross_correlation",
+    "plot_ramachandran",
     "read",
     "read_cg_mapping",
     "read_cif",

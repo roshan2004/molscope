@@ -11,6 +11,16 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``plot_ramachandran`` (and ``Molecule.plot_ramachandran``): a Ramachandran plot
+  of a protein's backbone phi/psi torsions on a ``[-180, 180]`` grid, coloured by
+  simplified-DSSP secondary-structure class (``color_by="ss"`` default; pass a
+  Matplotlib colour or ``None`` for a single colour). ``regions=True`` shades
+  schematic right-handed-alpha / beta / left-handed-alpha guide boxes (approximate
+  teaching aids, not statistically-derived density contours). Reuses the existing
+  ``backbone_torsions`` and ``SS_COLORS``; residues with undefined phi/psi (chain
+  ends, breaks) are skipped, and non-protein input raises a clear error. A
+  ``render_ramachandran`` MCP tool accompanies it. Zero new dependencies.
+
 - ``write_cg_itp`` (and ``coarsegrain.write_itp``): export a coarse-grained model
   as a rough GROMACS ``.itp`` topology skeleton — ``[moleculetype]``, ``[atoms]``
   (one ``CG_<resname>_<bead>`` row per bead with residue assignment, zero charge

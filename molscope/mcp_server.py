@@ -1222,6 +1222,27 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         ax = plot_cross_correlation(cross_correlation(models), show=False)
         return _figure_result(ax.figure, save_path)
 
+    @server.tool(title="Render Ramachandran plot", annotations=WRITE_NET)
+    @_friendly_errors
+    def render_ramachandran(
+        source: str, color_by: str = "ss", save_path: Optional[str] = None
+    ):
+        """Render a protein's Ramachandran plot (phi vs psi backbone torsions).
+
+        Points are coloured by simplified-DSSP secondary-structure class when
+        ``color_by="ss"`` (default), or a single colour for any other value.
+        Schematic alpha/beta region guides are shaded behind the scatter. Pass
+        ``save_path`` to write the figure to a file and return its path; omit it
+        for inline.
+        """
+        import matplotlib
+
+        matplotlib.use("Agg")
+        from .plotting import plot_ramachandran
+
+        ax = plot_ramachandran(_load(source), color_by=color_by, show=False)
+        return _figure_result(ax.figure, save_path)
+
     def _figure_result(figure, save_path: Optional[str]):
         """Save the figure to ``save_path`` (returning the path) or return it inline.
 

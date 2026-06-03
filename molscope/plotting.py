@@ -495,6 +495,111 @@ def plot_cross_correlation(matrix, ax=None, cmap="RdBu_r", show: bool = True):
     return ax
 
 
+_SS_LABELS = {
+    "H": "alpha-helix", "G": "3-10 helix", "I": "pi-helix",
+    "E": "beta-strand", "B": "beta-bridge", "T": "turn", "S": "bend", "-": "coil",
+}
+
+# Schematic favoured regions (phi_min, psi_min, width, height, label). These are
+# rough teaching guides, NOT statistically-derived Ramachandran density contours.
+_RAMA_REGIONS = [
+    (-150, -77, 110, 94, "αR"),    # right-handed alpha / 3-10 helix basin
+    (-180, 90, 130, 90, "β"),       # extended / beta-sheet
+    (35, 20, 60, 75, "αL"),         # left-handed alpha
+]
+
+
+def plot_ramachandran(molecule, ax=None, color_by: str = "ss", show: bool = True,
+                      regions: bool = True):
+    """Ramachandran plot (phi vs psi backbone torsions) for a protein.
+
+    Scatters each residue's ``(phi, psi)`` on a ``[-180, 180]`` grid from
+    :meth:`~molscope.molecule.Molecule.backbone_torsions`. ``color_by="ss"``
+    colours points by simplified-DSSP secondary-structure class (see
+    :data:`molscope.dssp.SS_COLORS`); ``color_by=None`` or any Matplotlib colour
+    draws a single colour. ``regions=True`` shades schematic guide boxes for the
+    right-handed alpha, beta and left-handed alpha regions — approximate teaching
+    aids, not statistically-derived density contours. Residues whose phi or psi
+    is undefined (chain ends and breaks) are skipped. Returns the ``Axes``.
+    """
+    import matplotlib.pyplot as plt
+
+    from . import dssp
+
+    try:
+        tor = molecule.backbone_torsions()
+    except ValueError as exc:
+        raise ValueError(
+            "Ramachandran plot needs a protein backbone (per-atom names and "
+            "residue ids); read the structure from PDB or mmCIF"
+        ) from exc
+    phi = np.asarray(tor.phi, dtype=float)
+    psi = np.asarray(tor.psi, dtype=float)
+    defined = ~np.isnan(phi) & ~np.isnan(psi)
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5, 5))
+
+    if regions:
+        from matplotlib.patches import Rectangle
+        for x, y, w, h, label in _RAMA_REGIONS:
+            ax.add_patch(Rectangle((x, y), w, h, facecolor="#cfe8ff",
+                                   edgecolor="none", alpha=0.5, zorder=1))
+            ax.text(x + w / 2, y + h / 2, label, ha="center", va="center",
+                    color="0.45", fontsize="small", zorder=2)
+
+    handles = []
+    if color_by == "ss":
+        codes = _residue_ss_codes(molecule, tor)[defined]
+        colors = [dssp.SS_COLORS.get(c, dssp.SS_COLORS["-"]) for c in codes]
+        from matplotlib.lines import Line2D
+        present = [c for c in dssp.SS_COLORS if c in set(codes)]
+        handles = [
+            Line2D([0], [0], marker="o", linestyle="", markerfacecolor=dssp.SS_COLORS[c],
+                   markeredgecolor="0.3", markersize=7, label=_SS_LABELS.get(c, c))
+            for c in present
+        ]
+    else:
+        colors = color_by if color_by is not None else "#1f77b4"
+
+    ax.scatter(phi[defined], psi[defined], c=colors, s=14,
+               edgecolors="0.3", linewidths=0.3, zorder=3)
+
+    ax.set_xlim(-180, 180)
+    ax.set_ylim(-180, 180)
+    ax.set_xticks(range(-180, 181, 90))
+    ax.set_yticks(range(-180, 181, 90))
+    ax.axhline(0, color="0.85", lw=0.6, zorder=0)
+    ax.axvline(0, color="0.85", lw=0.6, zorder=0)
+    ax.set_xlabel("φ (deg)")
+    ax.set_ylabel("ψ (deg)")
+    ax.set_aspect("equal")
+    ax.set_title(f"Ramachandran: {molecule.name or 'structure'}")
+    if handles:
+        ax.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.9)
+    if show:
+        plt.show()
+    return ax
+
+
+def _residue_ss_codes(molecule, torsions) -> np.ndarray:
+    """Per-residue SS code aligned to the torsion residues (coil where missing)."""
+    try:
+        ss = molecule.secondary_structure()
+    except Exception:  # pragma: no cover - non-protein / backbone-less structure
+        return np.full(len(torsions), "-")
+    ss_icodes = ss.icodes if ss.icodes is not None else [""] * len(ss)
+    lookup = {
+        (chain, int(resid), icode or ""): code
+        for chain, resid, icode, code in zip(ss.chains, ss.resids, ss_icodes, ss.codes)
+    }
+    tor_icodes = torsions.icodes if torsions.icodes is not None else [""] * len(torsions)
+    return np.array([
+        lookup.get((chain, int(resid), icode or ""), "-")
+        for chain, resid, icode in zip(torsions.chains, torsions.resids, tor_icodes)
+    ])
+
+
 def _colors(molecule, color_by: str):
     if color_by == "element":
         return [elements.color(e) for e in molecule.elements]
