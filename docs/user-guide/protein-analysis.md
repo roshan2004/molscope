@@ -100,7 +100,21 @@ tor.phi, tor.psi, tor.omega         # (R,) arrays aligned with tor.resids/chains
 ```
 
 Helical residues cluster near phi -63, psi -42; trans peptide bonds give omega
-near 180. Plot `tor.phi` against `tor.psi` for a Ramachandran scatter.
+near 180.
+
+For the standard Ramachandran scatter, `plot_ramachandran` draws phi vs psi on a
+`[-180, 180]` grid, coloured by secondary-structure class by default, with
+schematic alpha/beta region guides:
+
+```python
+mol = ms.read("examples/data/1fqy.pdb")
+mol.plot_ramachandran()                       # color_by="ss" (default)
+mol.plot_ramachandran(color_by="navy", regions=False)
+```
+
+The shaded regions are approximate teaching guides, not statistically-derived
+density contours. Residues whose phi or psi is undefined (chain ends, breaks)
+are skipped.
 
 ## Chain interfaces
 

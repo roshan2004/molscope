@@ -171,6 +171,7 @@ See [Docking-hit triage](docking-triage.md) for the workflow.
 | `render_distance_matrix` | `source`, `save_path` | Dense pairwise distance heatmap. |
 | `render_rmsd_heatmap` | `source` (multi-model), `save_path` | Ensemble pairwise-RMSD heatmap. |
 | `render_cross_correlation` | `source` (multi-model), `selection`, `save_path` | Dynamical cross-correlation (DCCM) heatmap. |
+| `render_ramachandran` | `source`, `color_by`, `save_path` | Ramachandran (phi/psi) plot, coloured by secondary structure. |
 
 Every plot tool takes an optional `save_path`. **Pass it to get a file you can
 open or share** (e.g. *"render the contact map for 3ptb and save it to

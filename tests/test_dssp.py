@@ -118,3 +118,40 @@ def test_backbone_torsions_requires_backbone():
     bare = Molecule(np.zeros((3, 3)), ["C", "C", "C"])
     with pytest.raises(ValueError):
         bare.backbone_torsions()
+
+
+# -- Ramachandran plot ------------------------------------------------------
+
+
+def test_plot_ramachandran_scatters_defined_torsions():
+    import matplotlib
+    matplotlib.use("Agg")
+
+    mol = aquaporin()
+    ax = mol.plot_ramachandran(show=False)
+    pts = ax.collections[-1].get_offsets()
+    # one point per residue with both phi and psi defined (chain ends dropped)
+    tor = mol.backbone_torsions()
+    defined = int((~np.isnan(tor.phi) & ~np.isnan(tor.psi)).sum())
+    assert len(pts) == defined
+    assert bool((np.abs(np.asarray(pts)) <= 180).all())
+    assert ax.get_legend() is not None              # SS legend by default
+    assert len(ax.patches) >= 3                      # schematic region guides
+
+
+def test_plot_ramachandran_single_colour_and_no_regions():
+    import matplotlib
+    matplotlib.use("Agg")
+
+    ax = aquaporin().plot_ramachandran(color_by=None, regions=False, show=False)
+    assert ax.get_legend() is None
+    assert len(ax.patches) == 0
+
+
+def test_plot_ramachandran_requires_backbone():
+    import matplotlib
+    matplotlib.use("Agg")
+
+    bare = Molecule(np.zeros((3, 3)), ["O", "H", "H"], name="water")
+    with pytest.raises(ValueError, match="protein backbone"):
+        bare.plot_ramachandran(show=False)
