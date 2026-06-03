@@ -42,6 +42,16 @@ VDW_RADII = {
 DEFAULT_VDW_RADIUS = 1.70
 
 
+# Maximum solvent-accessible surface area per residue in Å² (Tien et al. 2013,
+# "theoretical" values), used to normalise absolute SASA to relative SASA (RSA).
+MAX_ASA = {
+    "ALA": 129.0, "ARG": 274.0, "ASN": 195.0, "ASP": 193.0, "CYS": 167.0,
+    "GLU": 223.0, "GLN": 225.0, "GLY": 104.0, "HIS": 224.0, "ILE": 197.0,
+    "LEU": 201.0, "LYS": 236.0, "MET": 224.0, "PHE": 240.0, "PRO": 159.0,
+    "SER": 155.0, "THR": 172.0, "TRP": 285.0, "TYR": 263.0, "VAL": 174.0,
+}
+
+
 # Standard atomic weights (g/mol). Unknown atoms fall back to 1.0 so that a
 # mass-weighted centre over all-unknown elements reduces to the geometric mean.
 ATOMIC_MASSES = {
@@ -65,6 +75,15 @@ def covalent_radius(element: str) -> float:
 def vdw_radius(element: str) -> float:
     """Van der Waals radius in angstrom for an element symbol (case-insensitive)."""
     return VDW_RADII.get(element.upper(), DEFAULT_VDW_RADIUS)
+
+
+def max_asa(resname: str):
+    """Reference maximum SASA (Å², Tien et al. 2013) for a standard amino acid.
+
+    Returns ``None`` for non-standard residues, ligands or waters, which have no
+    reference and so cannot be normalised to a relative SASA.
+    """
+    return MAX_ASA.get((resname or "").upper())
 
 
 def mass(element: str) -> float:
