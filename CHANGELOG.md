@@ -9,6 +9,8 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-03
+
 ### Added
 
 - ``relative_sasa`` (and ``Molecule.relative_sasa``): per-residue relative solvent
@@ -542,7 +544,8 @@ Initial public release under the **MolScope** name, renamed from the earlier
 - `uv` support (lockfile, dev dependency group, `.python-version`), continuous
   integration, and README visual examples.
 
-[Unreleased]: https://github.com/roshan2004/molscope/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/roshan2004/molscope/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/roshan2004/molscope/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/roshan2004/molscope/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/roshan2004/molscope/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/roshan2004/molscope/compare/v0.9.0...v0.10.0

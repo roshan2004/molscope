@@ -214,4 +214,4 @@ __all__ = [
     "write_sdf",
     "write_xyz",
 ]
-__version__ = "0.12.0"
+__version__ = "0.13.0"
