@@ -72,15 +72,17 @@ for data in ds.graphs:                                   # views share these obj
 
 ### Standardise the target on the train split only
 
-Fit the mean/std on **train** and apply them everywhere, so val/test never leak
-into the normalisation:
+`ds.standardize_targets()` fits the mean/std on the **train** split, rewrites
+every graph's `data.y` into standardised space, and returns a scaler so val/test
+never leak into the normalisation:
 
 ```python
-train_y = torch.cat([g.y for g in ds.train]).float()
-mean, std = train_y.mean(), train_y.std().clamp_min(1e-6)
-for data in ds.graphs:
-    data.y = (data.y.float() - mean) / std               # map predictions back with * std + mean
+scaler = ds.standardize_targets()        # fit on train, applied to all data.y
+# later: scaler.inverse_transform(pred)  # map predictions back to angstroms
 ```
+
+`ds.labels` keeps the original physical-unit values; only the model-facing
+`data.y` is standardised.
 
 ## Train a GCN on the loader
 
@@ -122,14 +124,14 @@ for epoch in range(1, 121):
         optimizer.step()
 ```
 
-Evaluate by mapping predictions back to angstroms with `* std + mean`:
+Evaluate by mapping predictions back to angstroms with the scaler:
 
 ```python
 model.eval()
 with torch.no_grad():
     batch = next(iter(test_loader))
-    pred = model(batch) * std + mean
-    true = batch.y.view(-1) * std + mean
+    pred = scaler.inverse_transform(model(batch))
+    true = scaler.inverse_transform(batch.y.view(-1))
     print(f"test MAE: {(pred - true).abs().mean():.3f} A")
 ```
 

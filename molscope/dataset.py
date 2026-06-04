@@ -37,6 +37,26 @@ DATASET_FORMATS = ("pyg", "dgl", "networkx", "raw")
 
 
 @dataclass
+class TargetScaler:
+    """An affine target standardiser fit on a dataset's train split.
+
+    ``transform`` maps physical-unit targets into standardised space and
+    ``inverse_transform`` maps model outputs back. It uses only arithmetic
+    operators, so it works unchanged on Python floats, NumPy arrays, and
+    framework tensors. Produced by :meth:`GraphDataset.standardize_targets`.
+    """
+
+    mean: float
+    std: float
+
+    def transform(self, values):
+        return (values - self.mean) / self.std
+
+    def inverse_transform(self, values):
+        return values * self.std + self.mean
+
+
+@dataclass
 class GraphDataset:
     """The result of :func:`build_dataset`.
 
@@ -135,6 +155,54 @@ class GraphDataset:
                 f"to request the {split!r} loader"
             )
         return getattr(self, split)
+
+    def standardize_targets(self) -> TargetScaler:
+        """Standardise graph targets in place using train-split statistics only.
+
+        Fits a mean and standard deviation on the **train** split's labels and
+        rewrites every labelled graph's ``data.y`` into standardised space, so
+        validation and test targets never leak into the normalisation -- the
+        small correctness detail that is easy to get wrong by fitting on the
+        whole set. ``self.labels`` keeps the original physical-unit values.
+
+        Returns a :class:`TargetScaler`; map model outputs back with
+        ``scaler.inverse_transform(pred)``.
+
+        Requires ``fmt="pyg"`` (where labels are attached as ``data.y``), a built
+        split, and at least one labelled train graph.
+        """
+        import numpy as np
+
+        if self.fmt != "pyg":
+            raise ValueError(
+                "standardize_targets supports fmt='pyg' (labels attached as "
+                f"data.y), got {self.fmt!r}"
+            )
+        if self.split is None:
+            raise ValueError(
+                "standardize_targets needs a split; build with "
+                "build_dataset(..., split=(...))"
+            )
+        if self.labels is None:
+            raise ValueError("standardize_targets needs labels; none were provided")
+
+        train_values = [
+            float(self.labels[i])
+            for i in self.split.train
+            if self.labels[i] is not None
+        ]
+        if not train_values:
+            raise ValueError("no labelled graphs in the train split to fit on")
+
+        mean = float(np.mean(train_values))
+        std = max(float(np.std(train_values)), 1e-8)
+        scaler = TargetScaler(mean=mean, std=std)
+
+        for graph in self.graphs:
+            y = getattr(graph, "y", None)
+            if y is not None:
+                graph.y = scaler.transform(y)
+        return scaler
 
     def summary(self) -> str:
         """One-block human-readable description of the dataset."""

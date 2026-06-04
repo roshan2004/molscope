@@ -11,6 +11,16 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``GraphDataset.standardize_targets()`` and ``TargetScaler``: fit a target mean
+  and standard deviation on the **train** split only, rewrite every labelled
+  graph's ``data.y`` into standardised space, and return a ``TargetScaler`` whose
+  ``inverse_transform`` maps model outputs back to physical units. Keeps
+  validation and test out of the normalisation (the leakage mistake that inflates
+  scores); ``ds.labels`` is left in original units. Requires ``fmt="pyg"`` with a
+  built split and at least one labelled train graph. The
+  ``examples/pdb_to_pyg_ml.py`` walkthrough now uses it in place of an inline
+  normalisation loop.
+
 - ``build_dataset(cache_dir=...)``: an on-disk featurisation cache. Each
   file-based structure's graph is stored under a key derived from the file's
   *content* and the featurisation options (``fmt``, feature presets, ``pe``,

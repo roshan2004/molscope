@@ -84,21 +84,6 @@ def fold_coordinates_into_features(torch, ds):
         data.x = torch.cat([data.x, centred], dim=1)
 
 
-def standardise_targets(torch, ds):
-    """Standardise ``data.y`` using train-split statistics only.
-
-    Fitting the mean/std on train and applying them everywhere keeps val/test out
-    of the normalisation -- the small correctness detail that is easy to skip.
-    Returns ``(mean, std)`` so predictions can be mapped back to angstroms.
-    """
-    train_y = torch.cat([g.y for g in ds.train]).float()
-    mean = train_y.mean()
-    std = train_y.std().clamp_min(1e-6)
-    for data in ds.graphs:
-        data.y = (data.y.float() - mean) / std
-    return mean, std
-
-
 def make_model(torch, GCNConv, global_mean_pool, in_channels: int):
     class GCNRegressor(torch.nn.Module):
         def __init__(self):
@@ -118,13 +103,13 @@ def make_model(torch, GCNConv, global_mean_pool, in_channels: int):
     return GCNRegressor()
 
 
-def _mae_angstroms(torch, model, loader, mean, std):
+def _mae_angstroms(torch, model, loader, scaler):
     model.eval()
     errors = []
     with torch.no_grad():
         for batch in loader:
-            pred = model(batch) * std + mean
-            true = batch.y.view(-1) * std + mean
+            pred = scaler.inverse_transform(model(batch))
+            true = scaler.inverse_transform(batch.y.view(-1))
             errors.append((pred - true).abs())
     return float(torch.cat(errors).mean())
 
@@ -136,7 +121,9 @@ def run(epochs: int = 120, seed: int = 7) -> dict:
 
     ds = make_dataset(seed=seed)
     fold_coordinates_into_features(torch, ds)
-    mean, std = standardise_targets(torch, ds)
+    # Fit the target scaler on the train split only and standardise every graph's
+    # data.y, so validation and test never leak into the normalisation.
+    scaler = ds.standardize_targets()
 
     train_loader = ds.loader("train", batch_size=4)   # shuffles each epoch
     val_loader = ds.loader("val", batch_size=8)
@@ -158,10 +145,10 @@ def run(epochs: int = 120, seed: int = 7) -> dict:
         train_loss = total / len(ds.train)
         history.append(train_loss)
         if epoch == 1 or epoch % 40 == 0:
-            val_mae = _mae_angstroms(torch, model, val_loader, mean, std)
+            val_mae = _mae_angstroms(torch, model, val_loader, scaler)
             print(f"epoch {epoch:3d}  train_loss={train_loss:.3f}  val_MAE={val_mae:.3f} A")
 
-    test_mae = _mae_angstroms(torch, model, test_loader, mean, std)
+    test_mae = _mae_angstroms(torch, model, test_loader, scaler)
     return {
         "test_mae": test_mae,
         "first_loss": history[0],
