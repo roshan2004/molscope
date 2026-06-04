@@ -48,7 +48,7 @@ nav:
       - Build a molecular graph: examples/build-molecular-graph.md
       - Residue contact graphs: examples/residue-contact-graphs.md
       - PDB to graph and CG beads: examples/pdb-to-graph-cg.md
-      - PDB to PyG ML toy model: examples/pdb-to-pyg-ml.md
+      - PDB to a trained GNN: examples/pdb-to-pyg-ml.md
       - Coarse-grain a protein: examples/coarse-grain-protein.md
       - Export to PyTorch Geometric: examples/export-pyg.md
       - Analyze contacts: examples/analyze-contacts.md

@@ -1,10 +1,25 @@
-"""PDB -> graph -> PyTorch Geometric toy classifier/regressor.
+"""End-to-end GNN on-ramp: structures -> build_dataset -> loader -> trained GCN.
 
-This script turns the bundled 20-model NMR PDB structure into a tiny graph
-dataset. Each model becomes one molecular graph. The toy ML task is:
+This is the canonical "folder of structures to a trained graph neural network"
+walkthrough. It leans on :func:`molscope.build_dataset` and
+:meth:`GraphDataset.loader` to do the heavy lifting, so the only code left is the
+model and the training loop:
 
-* regress radius of gyration
-* classify whether a conformer is more expanded than the median conformer
+* ``build_dataset`` reads every structure, featurises it to a PyG graph, joins a
+  per-graph label, and splits into train/val/test in one call;
+* ``ds.loader("train", ...)`` hands back a batching ``DataLoader`` ready for the
+  loop.
+
+The dataset is intentionally tiny: the bundled ``examples/data/1aml.pdb`` NMR
+ensemble has 20 conformers, each one graph. The regression target is radius of
+gyration. The goal is to show the workflow clearly, not to claim a
+scientifically meaningful predictor.
+
+Because radius of gyration is a *geometric* property and MolScope's node-feature
+presets are composition-only (they cannot see how a conformer is folded), we
+fold each atom's centred coordinates into its feature vector before training --
+otherwise every conformer would look identical to the model. ``build_dataset``
+attaches those coordinates as ``data.pos`` for us.
 
 Install the optional ML stack first:
 
@@ -29,7 +44,6 @@ def _require_pyg():
     try:
         import torch
         import torch.nn.functional as F
-        from torch_geometric.loader import DataLoader
         from torch_geometric.nn import GCNConv, global_mean_pool
     except ImportError as exc:  # pragma: no cover - optional dependency path
         raise SystemExit(
@@ -37,99 +51,136 @@ def _require_pyg():
             "  uv pip install torch torch_geometric\n"
             "  .venv/bin/python examples/pdb_to_pyg_ml.py"
         ) from exc
-    return torch, F, DataLoader, GCNConv, global_mean_pool
+    return torch, F, GCNConv, global_mean_pool
 
 
-def build_dataset(torch):
-    """Convert NMR models to PyG graphs with toy graph-level labels."""
+def make_dataset(seed: int = 7):
+    """The whole data pipeline, in one ``build_dataset`` call.
+
+    Each NMR conformer is read with a unique name (``1aml#1`` ...), so a plain
+    ``{name: radius_of_gyration}`` dict joins as the per-graph label. The split
+    is a deterministic 70/15/15.
+    """
     models = ms.read_pdb_models(ENSEMBLE)
-    radii = torch.tensor([m.radius_of_gyration for m in models], dtype=torch.float)
-    rg_mean = radii.mean()
-    rg_std = radii.std().clamp_min(1e-6)
-    median = radii.median()
+    labels = {m.name: m.radius_of_gyration for m in models}
+    return ms.build_dataset(
+        models,                       # a list of Molecules (or "data/*.pdb")
+        fmt="pyg",
+        node_features="ml",           # element one-hots, atomic number, mass, ...
+        labels=labels,                # joined to each graph by name, attached as data.y
+        split=(0.70, 0.15, 0.15),
+        seed=seed,
+    )
 
-    graphs = []
-    for idx, mol in enumerate(models):
-        data = mol.to_pyg_data(node_preset="ml", edge_preset="ml")
 
-        # GCNConv consumes node features and edge_index. Appending centered 3D
-        # coordinates makes this geometry target learnable in a compact example.
-        centered_pos = data.pos - data.pos.mean(dim=0, keepdim=True)
-        data.x = torch.cat([data.x, centered_pos], dim=1)
+def fold_coordinates_into_features(torch, ds):
+    """Append each atom's centred xyz to its node features (geometric target).
 
-        data.y_reg = ((radii[idx] - rg_mean) / rg_std).view(1)
-        data.y_cls = (radii[idx] > median).float().view(1)
-        data.model_id = idx + 1
-        graphs.append(data)
+    Mutates the graphs in place; ``ds.train``/``val``/``test`` are views over the
+    same objects, so they pick the change up too.
+    """
+    for data in ds.graphs:
+        centred = data.pos - data.pos.mean(dim=0, keepdim=True)
+        data.x = torch.cat([data.x, centred], dim=1)
 
-    return graphs, rg_mean, rg_std
+
+def standardise_targets(torch, ds):
+    """Standardise ``data.y`` using train-split statistics only.
+
+    Fitting the mean/std on train and applying them everywhere keeps val/test out
+    of the normalisation -- the small correctness detail that is easy to skip.
+    Returns ``(mean, std)`` so predictions can be mapped back to angstroms.
+    """
+    train_y = torch.cat([g.y for g in ds.train]).float()
+    mean = train_y.mean()
+    std = train_y.std().clamp_min(1e-6)
+    for data in ds.graphs:
+        data.y = (data.y.float() - mean) / std
+    return mean, std
 
 
 def make_model(torch, GCNConv, global_mean_pool, in_channels: int):
-    class GraphRegressorClassifier(torch.nn.Module):
+    class GCNRegressor(torch.nn.Module):
         def __init__(self):
             super().__init__()
             self.conv1 = GCNConv(in_channels, 64)
             self.conv2 = GCNConv(64, 64)
-            self.reg_head = torch.nn.Linear(64, 1)
-            self.cls_head = torch.nn.Linear(64, 1)
+            self.conv3 = GCNConv(64, 64)
+            self.head = torch.nn.Linear(64, 1)
 
         def forward(self, batch):
             x = self.conv1(batch.x, batch.edge_index).relu()
             x = self.conv2(x, batch.edge_index).relu()
+            x = self.conv3(x, batch.edge_index).relu()
             pooled = global_mean_pool(x, batch.batch)
-            return self.reg_head(pooled).squeeze(-1), self.cls_head(pooled).squeeze(-1)
+            return self.head(pooled).squeeze(-1)
 
-    return GraphRegressorClassifier()
+    return GCNRegressor()
 
 
-def main():
-    torch, F, DataLoader, GCNConv, global_mean_pool = _require_pyg()
-    torch.manual_seed(7)
+def _mae_angstroms(torch, model, loader, mean, std):
+    model.eval()
+    errors = []
+    with torch.no_grad():
+        for batch in loader:
+            pred = model(batch) * std + mean
+            true = batch.y.view(-1) * std + mean
+            errors.append((pred - true).abs())
+    return float(torch.cat(errors).mean())
 
-    graphs, rg_mean, rg_std = build_dataset(torch)
-    order = torch.randperm(len(graphs), generator=torch.Generator().manual_seed(7)).tolist()
-    train_graphs = [graphs[i] for i in order[:14]]
-    test_graphs = [graphs[i] for i in order[14:]]
 
-    train_loader = DataLoader(train_graphs, batch_size=4, shuffle=True)
-    test_loader = DataLoader(test_graphs, batch_size=6)
+def run(epochs: int = 120, seed: int = 7) -> dict:
+    """Train the GCN and return a small results dict (used by the test too)."""
+    torch, F, GCNConv, global_mean_pool = _require_pyg()
+    torch.manual_seed(seed)
 
-    model = make_model(torch, GCNConv, global_mean_pool, graphs[0].x.size(1))
+    ds = make_dataset(seed=seed)
+    fold_coordinates_into_features(torch, ds)
+    mean, std = standardise_targets(torch, ds)
+
+    train_loader = ds.loader("train", batch_size=4)   # shuffles each epoch
+    val_loader = ds.loader("val", batch_size=8)
+    test_loader = ds.loader("test", batch_size=8)
+
+    model = make_model(torch, GCNConv, global_mean_pool, ds.graphs[0].x.size(1))
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-4)
 
-    for epoch in range(1, 81):
+    history = []
+    for epoch in range(1, epochs + 1):
         model.train()
         total = 0.0
         for batch in train_loader:
-            pred_reg, pred_cls = model(batch)
-            loss_reg = F.mse_loss(pred_reg, batch.y_reg.view(-1))
-            loss_cls = F.binary_cross_entropy_with_logits(pred_cls, batch.y_cls.view(-1))
-            loss = loss_reg + loss_cls
-
+            loss = F.mse_loss(model(batch), batch.y.view(-1))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             total += float(loss) * batch.num_graphs
+        train_loss = total / len(ds.train)
+        history.append(train_loss)
+        if epoch == 1 or epoch % 40 == 0:
+            val_mae = _mae_angstroms(torch, model, val_loader, mean, std)
+            print(f"epoch {epoch:3d}  train_loss={train_loss:.3f}  val_MAE={val_mae:.3f} A")
 
-        if epoch in {1, 20, 40, 80}:
-            print(f"epoch {epoch:02d} train_loss={total / len(train_graphs):.3f}")
+    test_mae = _mae_angstroms(torch, model, test_loader, mean, std)
+    return {
+        "test_mae": test_mae,
+        "first_loss": history[0],
+        "last_loss": history[-1],
+        "n_train": len(ds.train),
+        "n_val": len(ds.val),
+        "n_test": len(ds.test),
+        "in_channels": ds.graphs[0].x.size(1),
+    }
 
-    model.eval()
-    with torch.no_grad():
-        batch = next(iter(test_loader))
-        pred_reg, pred_cls = model(batch)
-        pred_rg = pred_reg * rg_std + rg_mean
-        true_rg = batch.y_reg.view(-1) * rg_std + rg_mean
-        mae = (pred_rg - true_rg).abs().mean()
-        acc = ((pred_cls.sigmoid() > 0.5) == batch.y_cls.view(-1).bool()).float().mean()
 
-    print("\nToy holdout metrics")
-    print(f"  radius-of-gyration MAE: {mae:.3f} A")
-    print(f"  expanded/constrained accuracy: {acc:.2%}")
-    print("\nFirst holdout predictions")
-    for model_id, predicted, observed in zip(batch.model_id.tolist(), pred_rg, true_rg):
-        print(f"  model {model_id:02d}: predicted {predicted:.2f} A, observed {observed:.2f} A")
+def main():
+    result = run()
+    print("\nHoldout metric")
+    print(f"  radius-of-gyration test MAE: {result['test_mae']:.3f} A")
+    print(
+        f"  (split: {result['n_train']} train / {result['n_val']} val / "
+        f"{result['n_test']} test graphs, {result['in_channels']} node features)"
+    )
 
 
 if __name__ == "__main__":

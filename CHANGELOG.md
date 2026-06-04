@@ -20,7 +20,11 @@ API changes; these are called out under **Changed** where they occur.
   epoch by default and the others do not, overridable via ``shuffle=``, with
   ``batch_size`` and any extra loader keywords (``num_workers``, ``drop_last``,
   ...) forwarded through. ``networkx``/``raw`` formats raise a clear error since
-  they have no batching loader. No new core dependency.
+  they have no batching loader. No new core dependency. The
+  ``examples/pdb_to_pyg_ml.py`` example and its docs page are rewritten around
+  this on-ramp (``build_dataset`` → ``ds.loader()`` → a trained GCN, with
+  train-only target standardisation), and a CI-gated smoke test runs it end to
+  end so the tutorial cannot silently bit-rot.
 
 - Optional coarse interaction labels on residue-contact-graph edges.
   ``to_residue_contact_graph(annotate_interactions=True)`` tags each contact edge
