@@ -22,6 +22,18 @@ API changes; these are called out under **Changed** where they occur.
   the MCP server as the ``describe_environment`` tool, which returns both the
   ``prompt`` text and the structured ``features``.
 
+### Validation
+
+- Characterise the ``describe_environment`` interaction heuristics against PLIP
+  (Adasme et al., *NAR* 2021) at residue granularity across the seven-complex
+  panel. New Tier-2 reference test
+  (``tests/validation/test_pocket_interactions_ref.py``) and a reproducible
+  report harness (``scripts/validate_pocket_interactions.py``). Headline
+  polar-contact union (H-bond ∪ salt bridge): precision 0.82, recall 0.97
+  (F1 0.89); hydrophobic R 0.88; aromatic/pi is a permissive presence flag
+  (P 0.07). The test skips cleanly when PLIP (conda-only) is absent. Results and
+  method are documented in ``docs/validation.md``.
+
 ### Documentation
 
 - Surface the graph-ML dataset on-ramp on the front pages: the README, docs

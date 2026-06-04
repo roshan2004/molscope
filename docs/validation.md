@@ -13,7 +13,7 @@ The validation suite is split into two tiers:
 - **Tier 1 invariants** run everywhere and check mathematical or conservation
   truths that do not need an external tool.
 - **Tier 2 reference comparisons** run when optional scientific tools are
-  installed: MDAnalysis, RDKit, and `mkdssp`/`dssp`.
+  installed: MDAnalysis, RDKit, `mkdssp`/`dssp`, and PLIP.
 
 Run the full validation layer locally:
 
@@ -34,7 +34,15 @@ uv sync --extra validation
 ```
 
 The secondary-structure reference additionally needs a system `mkdssp` or
-`dssp` executable on `PATH`.
+`dssp` executable on `PATH`. The pocket-interaction reference needs PLIP, which
+is conda-only in practice; create a dedicated environment once with:
+
+```bash
+conda create -n plip-ref -c conda-forge plip openbabel -y
+```
+
+The interaction test discovers it automatically (override the launcher with
+`MOLSCOPE_PLIP_CMD`), and skips cleanly when PLIP is absent.
 
 ## Current panel scope
 
@@ -59,6 +67,17 @@ descriptor wrapper-transparency check against a fresh RDKit call. This is enough
 to catch regressions across fold classes and chemistry families, but it is still
 a curated mini-panel, not an exhaustive benchmark.
 
+The pocket-interaction heuristics behind `describe_environment` are characterised
+against PLIP across the seven-complex panel (`scripts/validate_pocket_interactions.py`
+reproduces the table). At residue granularity the headline **polar-contact union**
+(hydrogen bond OR salt bridge) reaches **precision 0.82, recall 0.97 (F1 0.89)**:
+MolScope rarely misses a PLIP polar contact, and over-calls only modestly.
+Hydrophobic contacts are high-recall but noisier (P 0.47, R 0.88), and the
+aromatic/pi flag is deliberately a permissive "presence" signal (P 0.07, R 1.00),
+not pi-stacking geometry. This is the expected and honest profile of a heavy-atom
+heuristic, and it is exactly why the feature phrases its output as candidates and
+points users to a full profiler such as PLIP or ProLIF for rigorous analysis.
+
 ## Reference-tool checks
 
 | Area | Reference | Validation file | Panel | Tolerance / threshold | Rationale |
@@ -74,6 +93,7 @@ a curated mini-panel, not an exhaustive benchmark.
 | Descriptors at scale | RDKit | `tests/validation/test_esol_ref.py` | Delaney ESOL solubility set (1128 compounds) | absolute `1e-9` vs a fresh RDKit call | Stretches the wrapper-transparency contract across a large, diverse, real chemistry set; version-proof since both sides use the installed RDKit. |
 | Secondary structure | `mkdssp` / `dssp` | `tests/validation/test_dssp_ref.py` | `1fqy.pdb` (helical), `1ubq.pdb` (mixed alpha/beta), `1shg.pdb` (all-beta) | 3-state helix/strand/coil agreement per fold (`>= 0.95` helical, `>= 0.90` mixed and all-beta); helix fraction within `0.15` | MolScope's DSSP is simplified and educational, so reduced-state agreement is the honest target rather than byte-for-byte 8-state equality. The set spans three fold classes so agreement is reported as a range, not a single helical best case. |
 | Binding sites | RCSB structures with HETATM ligands | `tests/validation/test_binding_sites_ref.py` | `3ptb`; opt-in remote panel `1stp`, `1iep`, `3ert`, `1hsg`, `4hvp`, `2br1` | residue records and `pocket-basic` descriptors finite and internally consistent | Real protein-ligand files expose ambiguity, multi-chain sites, cofactors, ions and larger inhibitors better than synthetic fixtures. |
+| Pocket interactions | PLIP (Adasme et al., *NAR* 2021) | `tests/validation/test_pocket_interactions_ref.py` | `3ptb`; opt-in remote panel `1stp`, `1iep`, `3ert`, `1hsg`, `4hvp`, `2br1` | residue-level polar-contact (H-bond ∪ salt-bridge) recall `>= 0.80` and precision `>= 0.55`; hydrophobic recall `>= 0.70` | `describe_environment` is a heavy-atom heuristic, so the honest target is agreement with a full profiler, not equality. Recall is the floor that matters (it should rarely miss a real contact); over-calling is expected and quantified, not asserted away. |
 | Multi-pose SDF parsing | RDKit `SDMolSupplier` | `tests/validation/test_docking_ref.py` | Hand-authored `docking_poses.sdf`; generated bonded ligands (benzene, aspirin, caffeine) | pose count and titles exact; score data fields exact; coordinates absolute `1e-4` | `read_poses` underlies every dock-* tool; an independent SDF parser is the natural reference. The hand-authored fixture is written by neither library, so this is a true two-parser cross-check. |
 
 ## Invariant checks
@@ -104,6 +124,7 @@ a curated mini-panel, not an exhaustive benchmark.
 | Simplified DSSP | Complete protein backbone atoms (`N`, `CA`, `C`, `O`) and standard residue ordering | Not canonical `mkdssp`; boundary residues of helices and strands are where disagreements concentrate; bare XYZ input is insufficient. |
 | Coarse-graining | Beads are coordinate reductions and simple bead graphs for inspection | No force-field parameters, charges, exclusions, elastic networks, or validation of simulation behavior. |
 | Docking triage | A score data field is present in the SDF; V2000 records; fingerprint-based similarity for clustering | Reads docking output but does not dock, prepare, or re-score; the consensus rank is rank aggregation, not a calibrated affinity; diversity depends on the fingerprint and Tanimoto threshold. |
+| Pocket interaction heuristics (`describe_environment`) | Heavy-atom distances only; charged side-chain atoms identified by textbook residue/atom names; no added hydrogens, no donor/acceptor typing, no bond-angle or protonation model | Over-calls relative to PLIP, concentrated in hydrophobic contacts and especially aromatic/pi (a "presence" flag, not true pi-stacking geometry); the H-bond vs salt-bridge split differs from PLIP's, which is why the polar union is the headline metric; misses interactions to residues outside the pocket cutoff. |
 
 ## Updating validation
 
