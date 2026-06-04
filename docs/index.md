@@ -19,6 +19,12 @@ print(mol.summary())                        # atoms, formula, chains, bounding b
 desc  = mol.descriptors()                   # dict of structural descriptors
 graph = mol.to_graph()                       # ML-ready graph, no extra deps
 data  = mol.to_pyg_data()                    # PyTorch Geometric Data ([pyg])
+
+# ...or a whole folder of structures, in one call:
+ds = ms.build_dataset("data/*.pdb", fmt="pyg", labels="labels.csv",
+                      split=(0.8, 0.1, 0.1), cache_dir=".graph_cache")
+for batch in ds.loader("train", batch_size=32):   # batching DataLoader, ready to train
+    ...
 ```
 
 ## Core workflows
@@ -44,6 +50,9 @@ Each has a task-oriented tutorial:
   inference; preserve SDF formal charges.
 - Export atom/bond and residue-contact graphs to NetworkX, PyTorch Geometric,
   or DGL, with Laplacian and random-walk positional encodings.
+- Assemble a split, labelled graph dataset from a folder or RCSB accessions with
+  `build_dataset`/`fetch_dataset`: an on-disk featurisation cache, batching
+  `DataLoader`s, and train-only target standardisation.
 - Prototype interpretable coarse-grained mappings (and export OpenMM residue
   templates) for teaching, inspection, and graph representations.
 - Visualise molecules with Matplotlib or py3Dmol, from Python or the CLI.

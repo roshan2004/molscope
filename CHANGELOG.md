@@ -9,6 +9,13 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+### Documentation
+
+- Surface the graph-ML dataset on-ramp on the front pages: the README, docs
+  landing page, and quickstart now show ``build_dataset`` → ``ds.loader()`` (with
+  ``cache_dir``, ``standardize_targets``, and ``fetch_dataset``), not just
+  single-graph export.
+
 ## [0.14.0] - 2026-06-04
 
 ### Added

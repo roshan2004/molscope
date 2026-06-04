@@ -30,6 +30,19 @@ G = mol.to_networkx()
 Use this path for atom/bond message passing, residue-contact graphs, or
 framework exports such as PyTorch Geometric and DGL.
 
+For a whole **dataset**, `build_dataset` reads, featurises, label-joins, and
+splits a folder in one call, and `GraphDataset` carries it to a training loop:
+
+```python
+ds = ms.build_dataset("data/*.pdb", fmt="pyg", labels="labels.csv",
+                      split=(0.8, 0.1, 0.1), cache_dir=".graph_cache")
+scaler = ds.standardize_targets()                 # fit on train only
+for batch in ds.loader("train", batch_size=32):   # batching PyG/DGL DataLoader
+    ...
+```
+
+Start from RCSB accessions instead of files with `ms.fetch_dataset(ids, labels=...)`.
+
 ## PDB to coarse-grained beads
 
 ```python
