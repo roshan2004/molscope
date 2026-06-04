@@ -75,6 +75,28 @@ cg    = mol.coarse_grain("residue_com")        # one bead per residue
 `Molecule` is immutable: `translate`, `centered`, and `rotate` each return a new
 molecule, so transformations chain cleanly.
 
+### From a folder of structures to a trained GNN
+
+`build_dataset` collapses read → featurise → label-join → split into one call,
+and `GraphDataset` carries it the last mile to a training loop:
+
+```python
+ds = ms.build_dataset(
+    "data/*.pdb",                 # glob, list of paths/Molecules, or fetch_dataset(ids) from RCSB
+    fmt="pyg",                    # "pyg" | "dgl" | "networkx" | "raw"
+    labels="labels.csv",          # joined to each graph by file stem
+    split=(0.8, 0.1, 0.1),
+    cache_dir=".graph_cache",     # on-disk featurisation cache; reruns reuse it
+)
+scaler = ds.standardize_targets() # fit on train only; no val/test leakage
+for batch in ds.loader("train", batch_size=32):   # batching PyG/DGL DataLoader
+    ...                           # scaler.inverse_transform(pred) -> physical units
+```
+
+This graph-ML on-ramp adds no core dependency (`fmt="pyg"`/`"dgl"` need their
+extras). See [Molecular graphs](docs/user-guide/molecular-graphs.md) and the
+runnable [PDB to a trained GNN](docs/examples/pdb-to-pyg-ml.md) example.
+
 ## What you can do
 
 | Capability | Guide |
@@ -88,6 +110,7 @@ molecule, so transformations chain cleanly.
 | Native and RDKit-backed descriptors | [Structural descriptors](docs/user-guide/descriptors.md) |
 | Chemical perception, protein template bonds, bond-order inference | [Chemical perception](docs/user-guide/chemical-perception.md) |
 | Atom/bond and residue-contact graphs for ML (with positional encodings) | [Molecular graphs](docs/user-guide/molecular-graphs.md) |
+| Assemble a split, labelled graph dataset (cache, loaders, target scaling, RCSB fetch) | [Molecular graphs](docs/user-guide/molecular-graphs.md#building-a-dataset-in-one-call) |
 | Coarse-grained bead mappings (residue, Martini-style, custom) | [Coarse-graining](docs/user-guide/coarse-graining.md) |
 | NMR ensembles and clustering | [Ensemble analysis](docs/user-guide/ensembles.md) |
 | Plotting and py3Dmol viewing | [Plotting and viewing](docs/user-guide/plotting.md) |
