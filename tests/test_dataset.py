@@ -708,3 +708,82 @@ def test_standardize_targets_pyg_fits_on_train():
     # ds.labels is left in original units.
     assert ds.labels == originals
 
+
+# --- fetch_dataset (RCSB accession adapter) -------------------------------
+
+
+def _patch_fetch_file(monkeypatch, fail=()):
+    """Replace RCSB downloads with bundled example files (no network)."""
+    from molscope import dataset
+
+    def fake_fetch_file(pdb_id, fmt="pdb", cache_dir=None):
+        key = pdb_id.lower()
+        if key in fail:
+            raise ValueError(f"PDB id {key!r} not found at RCSB as {fmt} (HTTP 404)")
+        path = f"{DATA}/{key}.pdb"
+        if not os.path.exists(path):
+            raise ValueError(f"no bundled file for {key!r}")
+        return path
+
+    monkeypatch.setattr(dataset, "fetch_file", fake_fetch_file)
+
+
+def test_fetch_dataset_builds_and_joins_labels(monkeypatch):
+    from molscope import fetch_dataset
+
+    _patch_fetch_file(monkeypatch)
+    ds = fetch_dataset(
+        ["1fqy", "3ptb"],
+        labels={"1fqy": 1.0, "3ptb": 0.0},
+        fmt="raw",
+        split=(0.5, 0.0, 0.5),
+    )
+    assert ds.ids == ["1fqy", "3ptb"]
+    assert ds.labels == [1.0, 0.0]
+    assert ds.split is not None  # build_kwargs forwarded
+
+
+def test_fetch_dataset_labels_case_insensitive(monkeypatch):
+    from molscope import fetch_dataset
+
+    _patch_fetch_file(monkeypatch)
+    ds = fetch_dataset(["1FQY"], labels={"1FQY": 3.5}, fmt="raw")
+    assert ds.ids == ["1fqy"]  # download stems are lowercased
+    assert ds.labels == [3.5]
+
+
+def test_fetch_dataset_skips_failed_download(monkeypatch):
+    from molscope import fetch_dataset
+
+    _patch_fetch_file(monkeypatch, fail={"nope"})
+    ds = fetch_dataset(["1fqy", "nope", "3ptb"], fmt="raw")
+    assert ds.ids == ["1fqy", "3ptb"]
+    assert [src for src, _ in ds.skipped] == ["nope"]
+    assert "404" in ds.skipped[0][1]
+
+
+def test_fetch_dataset_all_downloads_fail(monkeypatch):
+    from molscope import fetch_dataset
+
+    _patch_fetch_file(monkeypatch, fail={"aaaa", "bbbb"})
+    ds = fetch_dataset(["aaaa", "bbbb"], fmt="raw")
+    assert len(ds) == 0
+    assert {src for src, _ in ds.skipped} == {"aaaa", "bbbb"}
+    assert ds.feature_names  # still populated for an empty dataset
+
+
+def test_fetch_dataset_on_error_raise(monkeypatch):
+    from molscope import fetch_dataset
+
+    _patch_fetch_file(monkeypatch, fail={"nope"})
+    with pytest.raises(ValueError, match="not found at RCSB"):
+        fetch_dataset(["1fqy", "nope"], fmt="raw", on_error="raise")
+
+
+def test_fetch_dataset_invalid_on_error(monkeypatch):
+    from molscope import fetch_dataset
+
+    _patch_fetch_file(monkeypatch)
+    with pytest.raises(ValueError, match="on_error must be"):
+        fetch_dataset(["1fqy"], fmt="raw", on_error="oops")
+

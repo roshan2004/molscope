@@ -29,7 +29,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .io import read
+from .io import fetch_file, read
 from .molecule import Molecule
 from .prepare import random_split
 
@@ -412,6 +412,75 @@ def build_dataset(
         skipped=skipped,
         feature_names=_feature_names(node_features, edge_features),
     )
+
+
+def fetch_dataset(
+    ids,
+    *,
+    labels=None,
+    fmt: str = "pyg",
+    structure_fmt: str = "pdb",
+    root: Optional[str] = None,
+    on_error: str = "skip",
+    **build_kwargs,
+) -> GraphDataset:
+    """Build a dataset from RCSB accessions, downloading each structure first.
+
+    The adapter for turning a published *accession + label* table (an enzyme
+    set, a fold-classification list, a stability benchmark, ...) into a trainable
+    dataset: it downloads each PDB id from the RCSB — cached under ``root`` so a
+    rerun does not re-download — and hands the files to :func:`build_dataset`,
+    which featurises, joins labels, and splits them.
+
+    Args:
+        ids: an iterable of RCSB PDB ids (case-insensitive).
+        labels: optional ``{id: value}`` dict (case-insensitive) or a CSV path
+            understood by :func:`build_dataset`. CSV ids must match the
+            *lowercased* accession (the downloaded file stem).
+        fmt: output graph format (see :func:`build_dataset`).
+        structure_fmt: ``"pdb"`` or ``"cif"``, the download format.
+        root: directory for the downloaded structures (default: the shared
+            ``molscope_cache`` temp dir). Reused across runs.
+        on_error: ``"skip"`` (record a failed download/featurisation and
+            continue) or ``"raise"``.
+        **build_kwargs: forwarded to :func:`build_dataset` — ``node_features``,
+            ``edge_features``, ``split``, ``seed``, ``pe``, ``n_jobs``, and
+            ``cache_dir`` (the *featurisation* cache, separate from ``root``).
+
+    Returns:
+        A :class:`GraphDataset`; accessions whose download failed appear in
+        ``ds.skipped`` alongside any that later failed to featurise.
+    """
+    if on_error not in ("skip", "raise"):
+        raise ValueError(f"on_error must be 'skip' or 'raise', got {on_error!r}")
+
+    paths, fetch_skipped = [], []
+    for pdb_id in ids:
+        try:
+            paths.append(fetch_file(str(pdb_id), fmt=structure_fmt, cache_dir=root))
+        except Exception as exc:
+            if on_error == "raise":
+                raise
+            fetch_skipped.append((str(pdb_id), f"{type(exc).__name__}: {exc}"))
+
+    if isinstance(labels, dict):
+        labels = {str(k).lower(): v for k, v in labels.items()}
+
+    if not paths:
+        node_preset = build_kwargs.get("node_features", "default")
+        edge_preset = build_kwargs.get("edge_features", "default")
+        return GraphDataset(
+            graphs=[],
+            ids=[],
+            fmt=fmt,
+            skipped=fetch_skipped,
+            feature_names=_feature_names(node_preset, edge_preset),
+        )
+
+    ds = build_dataset(paths, fmt=fmt, labels=labels, on_error=on_error, **build_kwargs)
+    # Surface download failures next to any featurisation failures.
+    ds.skipped = fetch_skipped + ds.skipped
+    return ds
 
 
 # --- internals ---------------------------------------------------------------
