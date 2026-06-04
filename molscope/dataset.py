@@ -12,10 +12,12 @@ extra, and ``fmt="raw"``/``"networkx"`` run on the core install.
     ds = ms.build_dataset("data/*.pdb", fmt="pyg", pe="laplacian",
                           labels="labels.csv", split=(0.8, 0.1, 0.1))
     ds.train, ds.val, ds.test       # framework graph objects, split
+    ds.loader("train", batch_size=32)   # batching DataLoader for a train loop
     print(ds.summary())
 
-It deliberately stops at "DataLoader-ready objects": there is no training loop,
-no model code, and no new file format.
+It deliberately stops at the framework's ``DataLoader``: :meth:`GraphDataset.loader`
+hands back a ready-to-iterate PyG/DGL loader, but there is no training loop, no
+model code, and no new file format.
 """
 
 from __future__ import annotations
@@ -68,6 +70,70 @@ class GraphDataset:
     @property
     def test(self) -> Optional[list]:
         return None if self.split is None else self._subset(self.split.test)
+
+    def loader(
+        self,
+        split: Optional[str] = None,
+        *,
+        batch_size: int = 1,
+        shuffle: Optional[bool] = None,
+        **kwargs,
+    ):
+        """Return a framework ``DataLoader`` that batches the graphs.
+
+        The last mile between a built dataset and a training loop: PyG graphs
+        are wrapped in a :class:`torch_geometric.loader.DataLoader` and DGL
+        graphs in a :class:`dgl.dataloading.GraphDataLoader`, both of which
+        collate the per-graph objects into mini-batches the framework's models
+        consume directly.
+
+        Args:
+            split: which subset to load, one of ``"train"``, ``"val"``,
+                ``"test"``, or ``None`` for the whole dataset. A named split
+                requires the dataset to have been built with ``split=``.
+            batch_size: graphs per mini-batch.
+            shuffle: whether to reshuffle each epoch. Defaults to ``True`` for
+                the train split and ``False`` otherwise.
+            **kwargs: forwarded to the underlying loader (e.g. ``num_workers``,
+                ``drop_last``).
+
+        Returns:
+            A ``torch_geometric.loader.DataLoader`` (``fmt="pyg"``) or
+            ``dgl.dataloading.GraphDataLoader`` (``fmt="dgl"``).
+
+        Raises:
+            ValueError: for ``fmt="networkx"``/``"raw"`` (no batching loader),
+                an unknown ``split`` name, or a named split when none was built.
+        """
+        if self.fmt == "pyg":
+            from torch_geometric.loader import DataLoader as _Loader
+        elif self.fmt == "dgl":
+            from dgl.dataloading import GraphDataLoader as _Loader
+        else:
+            raise ValueError(
+                f"loader() needs fmt='pyg' or 'dgl', got {self.fmt!r}; "
+                "networkx/raw graphs have no batching DataLoader"
+            )
+
+        graphs = self._loader_subset(split)
+        if shuffle is None:
+            shuffle = split == "train"
+        return _Loader(graphs, batch_size=batch_size, shuffle=shuffle, **kwargs)
+
+    def _loader_subset(self, split):
+        """The graph list for ``split``, validating the request."""
+        if split is None:
+            return self.graphs
+        if split not in ("train", "val", "test"):
+            raise ValueError(
+                f"unknown split {split!r}; use 'train', 'val', 'test', or None"
+            )
+        if self.split is None:
+            raise ValueError(
+                f"no split available; build_dataset(..., split=(...)) is required "
+                f"to request the {split!r} loader"
+            )
+        return getattr(self, split)
 
     def summary(self) -> str:
         """One-block human-readable description of the dataset."""

@@ -450,3 +450,83 @@ def test_load_dataset_missing_manifest():
     with pytest.raises(FileNotFoundError, match="manifest.json not found"):
         GraphDataset.load("does_not_exist_dir")
 
+
+# --- loader() bridge ------------------------------------------------------
+
+
+def _raw_dataset(split=None):
+    """A minimal GraphDataset for loader() validation (no framework needed)."""
+    from molscope.dataset import GraphDataset
+
+    return GraphDataset(graphs=[None, None], ids=["a", "b"], fmt="raw", split=split)
+
+
+def test_loader_rejects_non_framework_fmt():
+    # fmt is checked before any graphs are touched, so this runs everywhere.
+    with pytest.raises(ValueError, match="fmt='pyg' or 'dgl'"):
+        _raw_dataset().loader()
+
+
+def test_loader_unknown_split_name():
+    from molscope.dataset import GraphDataset
+
+    ds = GraphDataset(graphs=[None], ids=["a"], fmt="pyg")
+    with pytest.raises(ValueError, match="unknown split 'trian'"):
+        ds._loader_subset("trian")
+
+
+def test_loader_named_split_without_split():
+    from molscope.dataset import GraphDataset
+
+    ds = GraphDataset(graphs=[None], ids=["a"], fmt="pyg")
+    with pytest.raises(ValueError, match="no split available"):
+        ds._loader_subset("train")
+
+
+def test_loader_subset_selects_split():
+    from molscope.prepare import SplitResult
+
+    split = SplitResult(method="random", train=[0], val=[], test=[1])
+    ds = _raw_dataset(split=split)
+    ds.graphs = ["g0", "g1"]
+    assert ds._loader_subset("train") == ["g0"]
+    assert ds._loader_subset("test") == ["g1"]
+    assert ds._loader_subset(None) == ["g0", "g1"]
+
+
+def test_loader_pyg_batches_graphs():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    from torch_geometric.loader import DataLoader
+
+    ds = build_dataset(
+        [f"{DATA}/1fqy.pdb", f"{DATA}/3ptb.pdb"],
+        fmt="pyg",
+        split=(0.5, 0.0, 0.5),
+        seed=0,
+    )
+    loader = ds.loader(batch_size=2)
+    assert isinstance(loader, DataLoader)
+    batches = list(loader)
+    assert len(batches) == 1  # both graphs in one batch
+    assert batches[0].num_graphs == 2
+
+    # a named split draws only from that subset
+    train_loader = ds.loader("train", batch_size=1)
+    assert sum(b.num_graphs for b in train_loader) == len(ds.train)
+
+
+def test_loader_shuffle_default_follows_split():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    from torch.utils.data import RandomSampler, SequentialSampler
+
+    ds = build_dataset(PDBS, fmt="pyg", split=(0.34, 0.33, 0.33), seed=0)
+    # shuffle is reflected in the sampler torch picks, not a public attribute.
+    # train defaults to shuffling; val/test/whole default to not shuffling.
+    assert isinstance(ds.loader("train").sampler, RandomSampler)
+    assert isinstance(ds.loader("test").sampler, SequentialSampler)
+    assert isinstance(ds.loader().sampler, SequentialSampler)
+    # explicit override wins
+    assert isinstance(ds.loader("train", shuffle=False).sampler, SequentialSampler)
+

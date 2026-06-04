@@ -11,6 +11,17 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``GraphDataset.loader()``: the batching ``DataLoader`` step between a built
+  dataset and a training loop. For ``fmt="pyg"`` it returns a
+  ``torch_geometric.loader.DataLoader`` and for ``fmt="dgl"`` a
+  ``dgl.dataloading.GraphDataLoader``, collating the per-graph objects into
+  mini-batches. ``loader("train"|"val"|"test")`` draws from a built split (or the
+  whole dataset when called with no argument); the train split shuffles each
+  epoch by default and the others do not, overridable via ``shuffle=``, with
+  ``batch_size`` and any extra loader keywords (``num_workers``, ``drop_last``,
+  ...) forwarded through. ``networkx``/``raw`` formats raise a clear error since
+  they have no batching loader. No new core dependency.
+
 - Optional coarse interaction labels on residue-contact-graph edges.
   ``to_residue_contact_graph(annotate_interactions=True)`` tags each contact edge
   with one mutually-exclusive label, computed from residue chemistry and
