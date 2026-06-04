@@ -628,3 +628,83 @@ def test_corrupt_cache_entry_is_recomputed(tmp_path, monkeypatch):
     assert calls["n"] == 1  # only the corrupt entry is recomputed
     assert len(ds) == len(PDBS)
 
+
+# --- target standardisation -----------------------------------------------
+
+
+def _pyg_dataset(split, labels):
+    from molscope.dataset import GraphDataset
+
+    return GraphDataset(graphs=[None], ids=["a"], fmt="pyg", split=split, labels=labels)
+
+
+def test_target_scaler_roundtrip():
+    import numpy as np
+
+    from molscope.dataset import TargetScaler
+
+    s = TargetScaler(mean=10.0, std=2.0)
+    assert s.transform(12.0) == 1.0
+    assert s.inverse_transform(1.0) == 12.0
+    arr = np.array([8.0, 10.0, 12.0])
+    np.testing.assert_allclose(s.inverse_transform(s.transform(arr)), arr)
+
+
+def test_standardize_targets_requires_pyg():
+    from molscope.dataset import GraphDataset
+
+    ds = GraphDataset(graphs=[None], ids=["a"], fmt="raw")
+    with pytest.raises(ValueError, match="fmt='pyg'"):
+        ds.standardize_targets()
+
+
+def test_standardize_targets_requires_split():
+    from molscope.dataset import GraphDataset
+
+    ds = GraphDataset(graphs=[None], ids=["a"], fmt="pyg")
+    with pytest.raises(ValueError, match="needs a split"):
+        ds.standardize_targets()
+
+
+def test_standardize_targets_requires_labels():
+    from molscope.prepare import SplitResult
+
+    split = SplitResult(method="random", train=[0], val=[], test=[])
+    ds = _pyg_dataset(split, labels=None)
+    with pytest.raises(ValueError, match="needs labels"):
+        ds.standardize_targets()
+
+
+def test_standardize_targets_empty_train():
+    from molscope.prepare import SplitResult
+
+    split = SplitResult(method="random", train=[0], val=[], test=[])
+    ds = _pyg_dataset(split, labels=[None])
+    with pytest.raises(ValueError, match="no labelled graphs"):
+        ds.standardize_targets()
+
+
+def test_standardize_targets_pyg_fits_on_train():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    import torch
+
+    ds = build_dataset(
+        PDBS,
+        fmt="pyg",
+        labels={"1fqy": 1.0, "3ptb": 5.0, "1aml": 9.0},
+        split=(0.34, 0.33, 0.33),
+        seed=0,
+    )
+    originals = list(ds.labels)
+    scaler = ds.standardize_targets()
+
+    # Train targets are standardised to ~0 mean.
+    train_y = torch.cat([g.y for g in ds.train])
+    assert abs(float(train_y.mean())) < 1e-5
+    # The scaler inverts back to the physical-unit label for every graph.
+    for graph, original in zip(ds.graphs, originals):
+        assert abs(float(scaler.inverse_transform(graph.y)) - original) < 1e-4
+    # ds.labels is left in original units.
+    assert ds.labels == originals
+

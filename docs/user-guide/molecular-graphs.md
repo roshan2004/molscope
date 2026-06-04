@@ -276,3 +276,19 @@ each epoch and the others do not, unless you set `shuffle=` explicitly; extra
 keywords (`num_workers`, `drop_last`, ...) are forwarded to the underlying
 loader. That is where MolScope stops: it gives you DataLoader-ready batches, but
 no training loop or model code.
+
+### Standardise regression targets without leaking
+
+For `fmt="pyg"` regression, `ds.standardize_targets()` fits the target mean and
+standard deviation on the **train** split only, rewrites every graph's `data.y`
+into standardised space, and returns a `TargetScaler`:
+
+```python
+scaler = ds.standardize_targets()        # fit on train, applied to all data.y
+...
+pred_angstroms = scaler.inverse_transform(model(batch))  # back to physical units
+```
+
+Fitting on train alone keeps validation and test out of the statistics — the
+normalisation mistake that quietly inflates scores. `ds.labels` keeps the
+original values.
