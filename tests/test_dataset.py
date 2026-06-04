@@ -450,3 +450,181 @@ def test_load_dataset_missing_manifest():
     with pytest.raises(FileNotFoundError, match="manifest.json not found"):
         GraphDataset.load("does_not_exist_dir")
 
+
+# --- loader() bridge ------------------------------------------------------
+
+
+def _raw_dataset(split=None):
+    """A minimal GraphDataset for loader() validation (no framework needed)."""
+    from molscope.dataset import GraphDataset
+
+    return GraphDataset(graphs=[None, None], ids=["a", "b"], fmt="raw", split=split)
+
+
+def test_loader_rejects_non_framework_fmt():
+    # fmt is checked before any graphs are touched, so this runs everywhere.
+    with pytest.raises(ValueError, match="fmt='pyg' or 'dgl'"):
+        _raw_dataset().loader()
+
+
+def test_loader_unknown_split_name():
+    from molscope.dataset import GraphDataset
+
+    ds = GraphDataset(graphs=[None], ids=["a"], fmt="pyg")
+    with pytest.raises(ValueError, match="unknown split 'trian'"):
+        ds._loader_subset("trian")
+
+
+def test_loader_named_split_without_split():
+    from molscope.dataset import GraphDataset
+
+    ds = GraphDataset(graphs=[None], ids=["a"], fmt="pyg")
+    with pytest.raises(ValueError, match="no split available"):
+        ds._loader_subset("train")
+
+
+def test_loader_subset_selects_split():
+    from molscope.prepare import SplitResult
+
+    split = SplitResult(method="random", train=[0], val=[], test=[1])
+    ds = _raw_dataset(split=split)
+    ds.graphs = ["g0", "g1"]
+    assert ds._loader_subset("train") == ["g0"]
+    assert ds._loader_subset("test") == ["g1"]
+    assert ds._loader_subset(None) == ["g0", "g1"]
+
+
+def test_loader_pyg_batches_graphs():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    from torch_geometric.loader import DataLoader
+
+    ds = build_dataset(
+        [f"{DATA}/1fqy.pdb", f"{DATA}/3ptb.pdb"],
+        fmt="pyg",
+        split=(0.5, 0.0, 0.5),
+        seed=0,
+    )
+    loader = ds.loader(batch_size=2)
+    assert isinstance(loader, DataLoader)
+    batches = list(loader)
+    assert len(batches) == 1  # both graphs in one batch
+    assert batches[0].num_graphs == 2
+
+    # a named split draws only from that subset
+    train_loader = ds.loader("train", batch_size=1)
+    assert sum(b.num_graphs for b in train_loader) == len(ds.train)
+
+
+def test_loader_shuffle_default_follows_split():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    from torch.utils.data import RandomSampler, SequentialSampler
+
+    ds = build_dataset(PDBS, fmt="pyg", split=(0.34, 0.33, 0.33), seed=0)
+    # shuffle is reflected in the sampler torch picks, not a public attribute.
+    # train defaults to shuffling; val/test/whole default to not shuffling.
+    assert isinstance(ds.loader("train").sampler, RandomSampler)
+    assert isinstance(ds.loader("test").sampler, SequentialSampler)
+    assert isinstance(ds.loader().sampler, SequentialSampler)
+    # explicit override wins
+    assert isinstance(ds.loader("train", shuffle=False).sampler, SequentialSampler)
+
+
+# --- on-disk featurisation cache ------------------------------------------
+
+
+def _count_featurisations(monkeypatch):
+    """Patch the real featuriser to count calls; returns a mutable counter."""
+    from molscope import dataset
+
+    calls = {"n": 0}
+    original = dataset._featurise_one
+
+    def counting(item, opts):
+        calls["n"] += 1
+        return original(item, opts)
+
+    monkeypatch.setattr(dataset, "_featurise_one", counting)
+    return calls
+
+
+def test_cache_dir_populates_then_reuses(tmp_path, monkeypatch):
+    calls = _count_featurisations(monkeypatch)
+    cache = tmp_path / "cache"
+
+    first = build_dataset(PDBS, fmt="raw", cache_dir=str(cache))
+    assert calls["n"] == len(PDBS)  # cold: every input featurised
+    assert len(list(cache.glob("*.pkl"))) == len(PDBS)  # one entry per input
+
+    calls["n"] = 0
+    second = build_dataset(PDBS, fmt="raw", cache_dir=str(cache))
+    assert calls["n"] == 0  # warm: served entirely from cache
+    assert len(second) == len(first)
+    assert [g.n_atoms for g in second.graphs] == [g.n_atoms for g in first.graphs]
+
+
+def test_cache_key_includes_options(tmp_path, monkeypatch):
+    calls = _count_featurisations(monkeypatch)
+    cache = tmp_path / "cache"
+
+    build_dataset(PDBS, fmt="raw", cache_dir=str(cache))
+    calls["n"] = 0
+    # A different featurisation option must miss the cache and recompute.
+    build_dataset(PDBS, fmt="raw", self_loops=True, cache_dir=str(cache))
+    assert calls["n"] == len(PDBS)
+    assert len(list(cache.glob("*.pkl"))) == 2 * len(PDBS)
+
+
+def test_cache_miss_on_content_change(tmp_path, monkeypatch):
+    import shutil
+
+    calls = _count_featurisations(monkeypatch)
+    cache = tmp_path / "cache"
+    target = tmp_path / "mol.pdb"
+    shutil.copy(f"{DATA}/1fqy.pdb", target)
+
+    build_dataset([str(target)], fmt="raw", cache_dir=str(cache))
+    assert calls["n"] == 1
+
+    # Same path, different bytes -> the content hash changes -> recompute.
+    shutil.copy(f"{DATA}/3ptb.pdb", target)
+    calls["n"] = 0
+    ds = build_dataset([str(target)], fmt="raw", cache_dir=str(cache))
+    assert calls["n"] == 1
+    # Got the new structure, not the stale cached one.
+    expected = ms.read(f"{DATA}/3ptb.pdb").to_graph().n_atoms
+    assert ds.graphs[0].n_atoms == expected
+
+
+def test_cache_dir_created_if_missing(tmp_path):
+    nested = tmp_path / "a" / "b" / "cache"
+    assert not nested.exists()
+    build_dataset(PDBS, fmt="raw", cache_dir=str(nested))
+    assert nested.is_dir()
+    assert len(list(nested.glob("*.pkl"))) == len(PDBS)
+
+
+def test_molecule_sources_bypass_cache(tmp_path):
+    cache = tmp_path / "cache"
+    mols = [ms.read(p) for p in PDBS]
+    ds = build_dataset(mols, fmt="raw", cache_dir=str(cache))
+    assert len(ds) == len(PDBS)
+    # In-memory molecules have no stable identity, so nothing is cached.
+    assert cache.is_dir() and not list(cache.glob("*"))
+
+
+def test_corrupt_cache_entry_is_recomputed(tmp_path, monkeypatch):
+    calls = _count_featurisations(monkeypatch)
+    cache = tmp_path / "cache"
+
+    build_dataset(PDBS, fmt="raw", cache_dir=str(cache))
+    # Truncate one cache file so it fails to unpickle.
+    victim = next(iter(cache.glob("*.pkl")))
+    victim.write_bytes(b"")
+
+    calls["n"] = 0
+    ds = build_dataset(PDBS, fmt="raw", cache_dir=str(cache))
+    assert calls["n"] == 1  # only the corrupt entry is recomputed
+    assert len(ds) == len(PDBS)
+

@@ -156,8 +156,15 @@ for batch in loader:
     optimizer.step()
 ```
 
-This is intentionally a tiny teaching model, not a scientific benchmark. A
-runnable train/test version lives at `examples/pdb_to_pyg_ml.py`:
+This is intentionally a tiny teaching model, not a scientific benchmark. The
+loop above builds the graphs, attaches labels, and constructs the `DataLoader`
+by hand so the moving parts are visible. Once you know them,
+[`build_dataset`](../user-guide/molecular-graphs.md#building-a-dataset-in-one-call)
+plus [`ds.loader()`](../user-guide/molecular-graphs.md#mini-batches-for-a-training-loop)
+collapse all of that into two calls — the
+[PDB to a trained GNN](../examples/pdb-to-pyg-ml.md) example walks through the
+same task that way, and a runnable train/test version lives at
+`examples/pdb_to_pyg_ml.py`:
 
 ```bash
 uv pip install torch torch_geometric

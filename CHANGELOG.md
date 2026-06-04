@@ -11,6 +11,31 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``build_dataset(cache_dir=...)``: an on-disk featurisation cache. Each
+  file-based structure's graph is stored under a key derived from the file's
+  *content* and the featurisation options (``fmt``, feature presets, ``pe``,
+  ``self_loops``, ...), so a second call reuses the saved graphs and
+  re-featurises only inputs that are new or whose content or options changed.
+  ``labels`` and ``split`` are applied after loading and are not part of the key,
+  so re-labelling or re-splitting a cached set is free. In-memory ``Molecule``
+  sources are not cached (no stable on-disk identity) and a corrupt/partial entry
+  is transparently recomputed. The directory is created if missing.
+
+- ``GraphDataset.loader()``: the batching ``DataLoader`` step between a built
+  dataset and a training loop. For ``fmt="pyg"`` it returns a
+  ``torch_geometric.loader.DataLoader`` and for ``fmt="dgl"`` a
+  ``dgl.dataloading.GraphDataLoader``, collating the per-graph objects into
+  mini-batches. ``loader("train"|"val"|"test")`` draws from a built split (or the
+  whole dataset when called with no argument); the train split shuffles each
+  epoch by default and the others do not, overridable via ``shuffle=``, with
+  ``batch_size`` and any extra loader keywords (``num_workers``, ``drop_last``,
+  ...) forwarded through. ``networkx``/``raw`` formats raise a clear error since
+  they have no batching loader. No new core dependency. The
+  ``examples/pdb_to_pyg_ml.py`` example and its docs page are rewritten around
+  this on-ramp (``build_dataset`` → ``ds.loader()`` → a trained GCN, with
+  train-only target standardisation), and a CI-gated smoke test runs it end to
+  end so the tutorial cannot silently bit-rot.
+
 - Optional coarse interaction labels on residue-contact-graph edges.
   ``to_residue_contact_graph(annotate_interactions=True)`` tags each contact edge
   with one mutually-exclusive label, computed from residue chemistry and

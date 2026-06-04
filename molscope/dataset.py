@@ -12,16 +12,19 @@ extra, and ``fmt="raw"``/``"networkx"`` run on the core install.
     ds = ms.build_dataset("data/*.pdb", fmt="pyg", pe="laplacian",
                           labels="labels.csv", split=(0.8, 0.1, 0.1))
     ds.train, ds.val, ds.test       # framework graph objects, split
+    ds.loader("train", batch_size=32)   # batching DataLoader for a train loop
     print(ds.summary())
 
-It deliberately stops at "DataLoader-ready objects": there is no training loop,
-no model code, and no new file format.
+It deliberately stops at the framework's ``DataLoader``: :meth:`GraphDataset.loader`
+hands back a ready-to-iterate PyG/DGL loader, but there is no training loop, no
+model code, and no new file format.
 """
 
 from __future__ import annotations
 
 import csv
 import glob
+import hashlib
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -68,6 +71,70 @@ class GraphDataset:
     @property
     def test(self) -> Optional[list]:
         return None if self.split is None else self._subset(self.split.test)
+
+    def loader(
+        self,
+        split: Optional[str] = None,
+        *,
+        batch_size: int = 1,
+        shuffle: Optional[bool] = None,
+        **kwargs,
+    ):
+        """Return a framework ``DataLoader`` that batches the graphs.
+
+        The last mile between a built dataset and a training loop: PyG graphs
+        are wrapped in a :class:`torch_geometric.loader.DataLoader` and DGL
+        graphs in a :class:`dgl.dataloading.GraphDataLoader`, both of which
+        collate the per-graph objects into mini-batches the framework's models
+        consume directly.
+
+        Args:
+            split: which subset to load, one of ``"train"``, ``"val"``,
+                ``"test"``, or ``None`` for the whole dataset. A named split
+                requires the dataset to have been built with ``split=``.
+            batch_size: graphs per mini-batch.
+            shuffle: whether to reshuffle each epoch. Defaults to ``True`` for
+                the train split and ``False`` otherwise.
+            **kwargs: forwarded to the underlying loader (e.g. ``num_workers``,
+                ``drop_last``).
+
+        Returns:
+            A ``torch_geometric.loader.DataLoader`` (``fmt="pyg"``) or
+            ``dgl.dataloading.GraphDataLoader`` (``fmt="dgl"``).
+
+        Raises:
+            ValueError: for ``fmt="networkx"``/``"raw"`` (no batching loader),
+                an unknown ``split`` name, or a named split when none was built.
+        """
+        if self.fmt == "pyg":
+            from torch_geometric.loader import DataLoader as _Loader
+        elif self.fmt == "dgl":
+            from dgl.dataloading import GraphDataLoader as _Loader
+        else:
+            raise ValueError(
+                f"loader() needs fmt='pyg' or 'dgl', got {self.fmt!r}; "
+                "networkx/raw graphs have no batching DataLoader"
+            )
+
+        graphs = self._loader_subset(split)
+        if shuffle is None:
+            shuffle = split == "train"
+        return _Loader(graphs, batch_size=batch_size, shuffle=shuffle, **kwargs)
+
+    def _loader_subset(self, split):
+        """The graph list for ``split``, validating the request."""
+        if split is None:
+            return self.graphs
+        if split not in ("train", "val", "test"):
+            raise ValueError(
+                f"unknown split {split!r}; use 'train', 'val', 'test', or None"
+            )
+        if self.split is None:
+            raise ValueError(
+                f"no split available; build_dataset(..., split=(...)) is required "
+                f"to request the {split!r} loader"
+            )
+        return getattr(self, split)
 
     def summary(self) -> str:
         """One-block human-readable description of the dataset."""
@@ -129,7 +196,6 @@ class GraphDataset:
         the original :class:`GraphDataset` object.
         """
         import json
-        import pickle
 
         manifest_path = os.path.join(out_dir, "manifest.json")
         if not os.path.exists(manifest_path):
@@ -145,29 +211,7 @@ class GraphDataset:
         skipped = [tuple(item) for item in manifest.get("skipped", [])]
         feature_names = manifest.get("feature_names", {})
 
-        graphs = []
-        for _gid, fname in zip(ids, files):
-            fpath = os.path.join(out_dir, fname)
-            if fmt == "pyg":
-                import torch
-
-                # PyG ``Data`` objects are not plain tensors, so the safe
-                # unpickler that ``torch.load`` defaults to since PyTorch 2.6
-                # (weights_only=True) refuses to load them. These files are
-                # written by our own ``save()``, so loading them fully is safe.
-                graphs.append(torch.load(fpath, weights_only=False))
-            elif fmt == "dgl":
-                from dgl.data.utils import load_graphs
-
-                graphs.append(load_graphs(fpath)[0][0])
-            elif fmt == "networkx":
-                import networkx as nx
-
-                with open(fpath) as fh_graph:
-                    graphs.append(nx.node_link_graph(json.load(fh_graph)))
-            else:  # raw
-                with open(fpath, "rb") as fh_graph:
-                    graphs.append(pickle.load(fh_graph))
+        graphs = [_load_one(fmt, os.path.join(out_dir, fname)) for fname in files]
 
         split_result = None
         if "split" in manifest:
@@ -210,6 +254,7 @@ def build_dataset(
     seed: int = 0,
     n_jobs: int = 1,
     on_error: str = "skip",
+    cache_dir: Optional[str] = None,
 ) -> GraphDataset:
     """Build an ML graph dataset from structure files in one call.
 
@@ -230,6 +275,15 @@ def build_dataset(
         seed: random seed for the split.
         n_jobs: worker processes for featurisation (``fmt="dgl"`` runs serially).
         on_error: ``"skip"`` (record and continue) or ``"raise"``.
+        cache_dir: optional directory for an on-disk featurisation cache. Each
+            file-based structure is cached under a key derived from its *content*
+            and the featurisation options (``fmt``, the feature presets, ``pe``,
+            ``self_loops``, ...), so a second call reuses the stored graphs and
+            re-featurises only inputs that are new or whose content or options
+            changed. ``labels`` and ``split`` are applied after loading and are
+            not part of the key, so re-labelling or re-splitting is free.
+            In-memory ``Molecule`` sources are not cached (they have no stable
+            on-disk identity). The directory is created if missing.
 
     Returns:
         A :class:`GraphDataset` with ``.graphs``/``.ids``/``.labels``, the split
@@ -257,7 +311,10 @@ def build_dataset(
     # dgl graphs do not reliably pickle across processes; keep them serial.
     use_jobs = 1 if fmt == "dgl" else max(1, int(n_jobs))
 
-    results = _featurise_all(items, opts, use_jobs)
+    if cache_dir is not None:
+        os.makedirs(cache_dir, exist_ok=True)
+
+    results = _featurise_all(items, opts, use_jobs, cache_dir)
 
     graphs, ids, skipped = [], [], []
     for label, outcome in results:
@@ -342,43 +399,93 @@ def _stem(path: str) -> str:
     return os.path.splitext(os.path.basename(path))[0]
 
 
-def _featurise_all(items, opts, n_jobs):
+def _featurise_all(items, opts, n_jobs, cache_dir=None):
     if n_jobs <= 1:
-        return [(label, _featurise(item, opts)) for label, item in items]
+        return [(label, _featurise(item, opts, cache_dir)) for label, item in items]
     from functools import partial
     from multiprocessing import Pool
 
-    worker = partial(_featurise, opts=opts)
+    worker = partial(_featurise, opts=opts, cache_dir=cache_dir)
     with Pool(n_jobs) as pool:
         outcomes = pool.map(worker, [item for _, item in items])
     return [(label, outcome) for (label, _), outcome in zip(items, outcomes)]
 
 
-def _featurise(item, opts):
-    """Read (if needed) and convert one item to the requested graph format.
+def _featurise(item, opts, cache_dir=None):
+    """Featurise one item, going through the on-disk cache when enabled.
 
     Returns the graph object, or the Exception on failure (so it is safe as a
     multiprocessing worker, and the caller decides whether to skip or raise).
+    In-memory ``Molecule`` items bypass the cache (no stable on-disk identity).
     """
     try:
-        mol = item if isinstance(item, Molecule) else read(item)
-        graph = mol.to_graph(infer_orders=opts["infer_orders"])
-        fmt = opts["fmt"]
-        if fmt == "raw":
-            return graph
-        if fmt == "networkx":
-            return graph.to_networkx()
-        exporter = graph.to_pyg_data if fmt == "pyg" else graph.to_dgl_graph
-        return exporter(
-            node_preset=opts["node_features"],
-            edge_preset=opts["edge_features"],
-            include_self_loops=opts["self_loops"],
-            include_global_node=opts["global_node"],
-            include_pe=opts["pe"],
-            pe_k=opts["pe_k"],
-        )
+        if cache_dir is None or isinstance(item, Molecule):
+            return _featurise_one(item, opts)
+
+        key = _cache_key(item, opts)
+        cached = _cache_load(cache_dir, key, opts["fmt"])
+        if cached is not None:
+            return cached
+        graph = _featurise_one(item, opts)
+        _cache_save(cache_dir, key, opts["fmt"], graph)
+        return graph
     except Exception as exc:
         return exc
+
+
+def _featurise_one(item, opts):
+    """Read (if needed) and convert one item to the requested graph format."""
+    mol = item if isinstance(item, Molecule) else read(item)
+    graph = mol.to_graph(infer_orders=opts["infer_orders"])
+    fmt = opts["fmt"]
+    if fmt == "raw":
+        return graph
+    if fmt == "networkx":
+        return graph.to_networkx()
+    exporter = graph.to_pyg_data if fmt == "pyg" else graph.to_dgl_graph
+    return exporter(
+        node_preset=opts["node_features"],
+        edge_preset=opts["edge_features"],
+        include_self_loops=opts["self_loops"],
+        include_global_node=opts["global_node"],
+        include_pe=opts["pe"],
+        pe_k=opts["pe_k"],
+    )
+
+
+# --- on-disk featurisation cache --------------------------------------------
+
+_CACHE_EXT = {"pyg": ".pt", "dgl": ".bin", "networkx": ".json", "raw": ".pkl"}
+
+
+def _cache_key(path, opts) -> str:
+    """A content-and-options digest identifying one cached featurisation."""
+    h = hashlib.sha1()
+    h.update(repr(sorted(opts.items())).encode())
+    h.update(b"\0")
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _cache_load(cache_dir, key, fmt):
+    """Return the cached graph for ``key``, or ``None`` on a miss.
+
+    A corrupt or partially-written cache entry is treated as a miss so the
+    caller simply re-featurises rather than failing.
+    """
+    path = os.path.join(cache_dir, f"{key}{_CACHE_EXT[fmt]}")
+    if not os.path.exists(path):
+        return None
+    try:
+        return _load_one(fmt, path)
+    except Exception:
+        return None
+
+
+def _cache_save(cache_dir, key, fmt, graph):
+    _save_one(graph, fmt, cache_dir, key)
 
 
 def _resolve_labels(labels, ids, id_col, label_col):
@@ -473,3 +580,31 @@ def _save_one(graph, fmt, out_dir, gid):
         with open(out, "wb") as fh:
             pickle.dump(graph, fh)
     return os.path.basename(out)
+
+
+def _load_one(fmt, fpath):
+    """Load a single graph written by :func:`_save_one`."""
+    if fmt == "pyg":
+        import torch
+
+        # PyG ``Data`` objects are not plain tensors, so the safe unpickler that
+        # ``torch.load`` defaults to since PyTorch 2.6 (weights_only=True)
+        # refuses them. These files are written by our own ``_save_one``, so
+        # loading them fully is safe.
+        return torch.load(fpath, weights_only=False)
+    if fmt == "dgl":
+        from dgl.data.utils import load_graphs
+
+        return load_graphs(fpath)[0][0]
+    if fmt == "networkx":
+        import json
+
+        import networkx as nx
+
+        with open(fpath) as fh:
+            return nx.node_link_graph(json.load(fh))
+    # raw
+    import pickle
+
+    with open(fpath, "rb") as fh:
+        return pickle.load(fh)

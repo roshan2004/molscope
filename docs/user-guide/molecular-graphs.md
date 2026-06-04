@@ -226,12 +226,53 @@ ds = ms.build_dataset(
 )
 
 print(ds.summary())
-ds.train, ds.val, ds.test         # framework graph objects, ready for a DataLoader
+ds.train, ds.val, ds.test         # framework graph objects, the split as lists
 ds.save("out/")                   # graphs + a manifest.json
 ```
 
 It is a thin wrapper over the exporters above, so `fmt="pyg"`/`"dgl"` need their
 extras while `fmt="raw"` (a `MolecularGraph`) and `fmt="networkx"` run on the
 core install. Unreadable inputs are skipped and recorded in `ds.skipped` unless
-you pass `on_error="raise"`. It stops at DataLoader-ready objects: no training
-loop or model code.
+you pass `on_error="raise"`.
+
+### Cache featurisation across runs
+
+Featurising a large corpus is the slow part. Pass `cache_dir=` to store each
+structure's graph on disk so later runs reuse it instead of recomputing:
+
+```python
+ds = ms.build_dataset("data/*.pdb", fmt="pyg", cache_dir=".graph_cache")
+# tweak labels or the split and rebuild — only new/changed files re-featurise
+ds = ms.build_dataset("data/*.pdb", fmt="pyg", cache_dir=".graph_cache",
+                      labels="labels.csv", split=(0.8, 0.1, 0.1))
+```
+
+Each cache entry is keyed by the file's **content** plus the featurisation
+options (`fmt`, the feature presets, `pe`, `self_loops`, ...), so editing a
+structure or changing an option re-featurises just that input automatically.
+`labels` and `split` are applied after loading and are not part of the key, so
+re-labelling or re-splitting a cached set is free. In-memory `Molecule` sources
+are not cached (they have no stable on-disk identity), and a corrupt entry is
+simply recomputed.
+
+### Mini-batches for a training loop
+
+For `fmt="pyg"` or `fmt="dgl"`, [`ds.loader()`](../api-reference.md) hands back
+the framework's batching `DataLoader` so you can drop straight into a training
+loop:
+
+```python
+train_loader = ds.loader("train", batch_size=32)   # shuffles by default
+val_loader   = ds.loader("val", batch_size=64)      # no shuffle
+
+for batch in train_loader:
+    out = model(batch)            # a batched PyG Data / DGL graph
+    ...
+```
+
+Pass `split=None` (the default) to loop over the whole dataset, or `"train"` /
+`"val"` / `"test"` for a subset built with `split=`. The train split shuffles
+each epoch and the others do not, unless you set `shuffle=` explicitly; extra
+keywords (`num_workers`, `drop_last`, ...) are forwarded to the underlying
+loader. That is where MolScope stops: it gives you DataLoader-ready batches, but
+no training loop or model code.
