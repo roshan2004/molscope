@@ -11,6 +11,16 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``build_dataset(cache_dir=...)``: an on-disk featurisation cache. Each
+  file-based structure's graph is stored under a key derived from the file's
+  *content* and the featurisation options (``fmt``, feature presets, ``pe``,
+  ``self_loops``, ...), so a second call reuses the saved graphs and
+  re-featurises only inputs that are new or whose content or options changed.
+  ``labels`` and ``split`` are applied after loading and are not part of the key,
+  so re-labelling or re-splitting a cached set is free. In-memory ``Molecule``
+  sources are not cached (no stable on-disk identity) and a corrupt/partial entry
+  is transparently recomputed. The directory is created if missing.
+
 - ``GraphDataset.loader()``: the batching ``DataLoader`` step between a built
   dataset and a training loop. For ``fmt="pyg"`` it returns a
   ``torch_geometric.loader.DataLoader`` and for ``fmt="dgl"`` a

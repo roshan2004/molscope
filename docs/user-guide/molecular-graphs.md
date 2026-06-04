@@ -235,6 +235,26 @@ extras while `fmt="raw"` (a `MolecularGraph`) and `fmt="networkx"` run on the
 core install. Unreadable inputs are skipped and recorded in `ds.skipped` unless
 you pass `on_error="raise"`.
 
+### Cache featurisation across runs
+
+Featurising a large corpus is the slow part. Pass `cache_dir=` to store each
+structure's graph on disk so later runs reuse it instead of recomputing:
+
+```python
+ds = ms.build_dataset("data/*.pdb", fmt="pyg", cache_dir=".graph_cache")
+# tweak labels or the split and rebuild — only new/changed files re-featurise
+ds = ms.build_dataset("data/*.pdb", fmt="pyg", cache_dir=".graph_cache",
+                      labels="labels.csv", split=(0.8, 0.1, 0.1))
+```
+
+Each cache entry is keyed by the file's **content** plus the featurisation
+options (`fmt`, the feature presets, `pe`, `self_loops`, ...), so editing a
+structure or changing an option re-featurises just that input automatically.
+`labels` and `split` are applied after loading and are not part of the key, so
+re-labelling or re-splitting a cached set is free. In-memory `Molecule` sources
+are not cached (they have no stable on-disk identity), and a corrupt entry is
+simply recomputed.
+
 ### Mini-batches for a training loop
 
 For `fmt="pyg"` or `fmt="dgl"`, [`ds.loader()`](../api-reference.md) hands back
