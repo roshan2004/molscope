@@ -219,6 +219,120 @@ def test_binding_site_on_trypsin_benzamidine():
     assert bs.min_distances == sorted(bs.min_distances)
 
 
+# -- semantic pocket description --------------------------------------------
+
+
+def pocket_with_interactions():
+    """A synthetic BEN pocket with one residue of each interaction class.
+
+    PHE70 (apolar ring) sits ~3.5 A from a ligand carbon (hydrophobic wall +
+    aromatic), ASP189 OD2 ~3.1 A from the ligand amine N (salt bridge), and
+    SER95 OG ~2.9 A from a ligand carbonyl O (hydrogen bond). GLY10 is too far.
+    """
+    return Molecule(
+        np.array([
+            [0.0, 0.0, 0.0],     # 0 PHE70 CA
+            [3.5, 0.0, 0.0],     # 1 PHE70 CG (apolar carbon, ~3.5 A from BEN C1)
+            [0.0, 5.0, 0.0],     # 2 ASP189 CA
+            [3.1, 5.0, 0.0],     # 3 ASP189 OD2 (anionic, ~3.1 A from BEN N1)
+            [0.0, -5.0, 0.0],    # 4 SER95 CA
+            [2.9, -5.0, 0.0],    # 5 SER95 OG (~2.9 A from BEN O2)
+            [40.0, 0.0, 0.0],    # 6 GLY10 CA (far)
+            # ligand BEN
+            [7.0, 0.0, 0.0],     # 7 BEN C1
+            [6.2, 5.0, 0.0],     # 8 BEN N1 (amine)
+            [5.8, -5.0, 0.0],    # 9 BEN O2 (carbonyl)
+        ]),
+        elements=["C", "C", "C", "O", "C", "O", "C", "C", "N", "O"],
+        atom_names=["CA", "CG", "CA", "OD2", "CA", "OG", "CA", "C1", "N1", "O2"],
+        resnames=["PHE", "PHE", "ASP", "ASP", "SER", "SER", "GLY",
+                  "BEN", "BEN", "BEN"],
+        resids=np.array([70, 70, 189, 189, 95, 95, 10, 300, 300, 300]),
+        chains=["A"] * 10,
+        hetero=[False] * 7 + [True] * 3,
+    )
+
+
+def test_describe_environment_detects_each_interaction_class():
+    mol = pocket_with_interactions()
+    env = mol.select_pocket(ligand="BEN", cutoff=4.5).environment()
+
+    assert [r.resname for r in env.hydrophobic_residues] == ["PHE"]
+    assert [r.resname for r in env.aromatic_residues] == ["PHE"]
+
+    assert len(env.salt_bridges) == 1
+    sb = env.salt_bridges[0]
+    assert (sb.residue.resname, sb.residue_atom, sb.ligand_atom) == ("ASP", "OD2", "N1")
+    assert sb.distance == pytest.approx(3.1, abs=1e-3)
+
+    # The ASP-N1 pair is reported once, as a salt bridge, not also as an H-bond.
+    assert all(hb.residue.resname != "ASP" for hb in env.hydrogen_bonds)
+    assert len(env.hydrogen_bonds) == 1
+    hb = env.hydrogen_bonds[0]
+    assert (hb.residue.resname, hb.residue_atom, hb.ligand_atom) == ("SER", "OG", "O2")
+    assert hb.distance == pytest.approx(2.9, abs=1e-3)
+
+
+def test_describe_environment_prose_mentions_key_features():
+    mol = pocket_with_interactions()
+    prompt = mol.select_pocket(ligand="BEN", cutoff=4.5).describe_environment()
+    assert "ligand BEN" in prompt
+    assert "hydrophobic" in prompt and "PHE70" in prompt
+    assert "pi-stacking" in prompt
+    assert "hydrogen bond" in prompt.lower() and "SER95" in prompt
+    assert "electrostatic" in prompt and "carboxylate of ASP189" in prompt
+    # Heuristic confidence: prose hedges and points to a rigorous profiler.
+    assert "likely" in prompt and "possible" in prompt
+    assert "PLIP or ProLIF" in prompt
+
+
+def test_describe_environment_purely_hydrophobic_pocket():
+    mol = Molecule(
+        np.array([[0.0, 0, 0], [3.5, 0, 0], [40.0, 0, 0], [7.0, 0, 0]]),
+        elements=["C", "C", "C", "C"],
+        atom_names=["CA", "CB", "CA", "C1"],
+        resnames=["LEU", "LEU", "GLY", "LIG"],
+        resids=np.array([1, 1, 9, 100]),
+        chains=["A", "A", "A", "A"],
+        hetero=[False, False, False, True],
+    )
+    env = mol.select_pocket(cutoff=4.5).environment()
+    assert [r.resname for r in env.hydrophobic_residues] == ["LEU"]
+    assert env.hydrogen_bonds == [] and env.salt_bridges == []
+    assert "predominantly hydrophobic" in env.text()
+
+
+def test_select_pocket_wrapper_delegates_to_binding_site():
+    mol = pocket_with_interactions()
+    pocket = mol.select_pocket(ligand="BEN", cutoff=4.5)
+    assert pocket.ligand.resname == "BEN"
+    assert pocket.cutoff == 4.5
+    assert {r.resname for r in pocket.residues} == {"PHE", "ASP", "SER"}
+    # descriptors / to_molecule reachable without re-passing the molecule.
+    assert pocket.descriptors()["pocket_n_residues"] == 3.0
+    assert len(pocket.to_molecule(include_ligand=True)) == len(pocket.to_molecule()) + 3
+
+
+def test_describe_environment_on_trypsin_benzamidine():
+    mol = ms.read(os.path.join(DATA, "3ptb.pdb"))
+    env = mol.select_pocket(ligand="BEN", cutoff=4.5).environment()
+    # The hallmark of the benzamidine S1 site: a salt bridge to Asp189.
+    assert any(sb.residue.resid == 189 and sb.residue.resname == "ASP"
+               for sb in env.salt_bridges)
+    prompt = env.text()
+    assert "ligand BEN" in prompt
+    assert "electrostatic" in prompt
+
+
+def test_describe_environment_to_dict_is_json_serialisable():
+    import json
+
+    env = pocket_with_interactions().select_pocket(ligand="BEN").environment()
+    payload = json.dumps(env.to_dict())
+    assert "salt_bridges" in payload
+    assert "hydrogen_bonds" in payload
+
+
 # -- rich residue identity on contact records -------------------------------
 
 

@@ -166,6 +166,25 @@ mol.binding_site(ligand=("A", 1))            # by (chain, resid)
 mol.binding_site(ligand=("A", 100, "A"))     # by (chain, resid, insertion code)
 ```
 
+### Describe a pocket for LLMs
+
+`select_pocket(...).describe_environment()` renders the pocket as a
+chemistry-aware paragraph (hydrophobic wall, aromatic residues, hydrogen bonds,
+salt bridges) you can feed directly to an LLM or RAG pipeline. The interactions
+come from distance-only heuristics over heavy atoms (no donor/acceptor typing,
+bond-angle, or protonation-state analysis), so the prose is phrased as
+candidates ("likely", "possible"); treat it as a first-pass scaffold and confirm
+with a dedicated profiler such as PLIP or ProLIF.
+
+```python
+pocket = mol.select_pocket(ligand="BEN", cutoff=4.5)
+print(pocket.describe_environment())
+# ... A possible salt bridge / electrostatic contact is suggested between the
+# ligand N2 and the carboxylate of ASP189 (2.9 A). ...
+
+pocket.environment().to_dict()               # structured findings for JSON / RAG
+```
+
 Water and common ions are excluded from `ligands()` by default
 (`exclude_water`, `exclude_ions`). The polymer/hetero split is also available as
 selections:

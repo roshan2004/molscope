@@ -36,6 +36,41 @@ site.descriptors(mol, preset="pocket-basic")
 site.plot(mol, show=False)          # pocket residues plus ligand
 ```
 
+## Describe the pocket for an LLM
+
+LLMs and RAG pipelines struggle with raw 3D coordinates. `describe_environment`
+turns the pocket into a chemistry-aware paragraph you can drop straight into a
+prompt: it reports the hydrophobic wall, aromatic residues, hydrogen bonds, and
+salt-bridge / electrostatic contacts from pure-geometry heuristics (no force
+field).
+
+```python
+pocket = mol.select_pocket(ligand="BEN", cutoff=4.5)
+print(pocket.describe_environment())
+# The binding pocket around ligand BEN (chain A) is lined by 13 residues within
+# 4.5 A of the ligand. A hydrophobic pocket wall appears to be formed by VAL213,
+# CYS191 and TRP215. Aromatic ring from TRP215 may engage in pi-stacking or
+# cation-pi interactions with the ligand. Likely hydrogen bonds are suggested
+# between the ligand N1 and O of GLY219 (2.8 A) and the ligand N2 and OG of
+# SER190 (3.0 A). A possible salt bridge / electrostatic contact is suggested
+# between the ligand N2 and the carboxylate of ASP189 (2.9 A). (Contacts are
+# inferred from heavy-atom distances only ... confirm with a profiler such as
+# PLIP or ProLIF.)
+```
+
+The interactions are **distance-only heuristics**: there is no donor/acceptor
+typing, hydrogen-bond angle criterion, or protonation-state model, so the prose
+is deliberately phrased as candidates ("likely", "possible"). Treat the output
+as a first-pass scaffold and confirm with a dedicated interaction profiler such
+as [PLIP](https://github.com/pharmai/plip) or
+[ProLIF](https://github.com/chemosim-lab/ProLIF) for rigorous analysis.
+
+For programmatic use, `pocket.environment()` returns a `PocketEnvironment` whose
+`to_dict()` gives the structured findings (hydrophobic residues, aromatic
+residues, hydrogen bonds, salt bridges) with atom names and distances. The same
+output is available over the MCP server as the `describe_environment` tool, which
+returns both the `prompt` text and the structured `features`.
+
 The same residue table is available from the command line:
 
 ```bash

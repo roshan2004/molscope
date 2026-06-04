@@ -137,6 +137,7 @@ RMSD against experiment).
 | `backbone_torsions` | `source` | Per-residue phi/psi/omega (Ramachandran), `null` where undefined. |
 | `contact_map` | `source`, `cutoff`, `level`, `method`, `min_seq_sep` | Contact count, contact order, labelled pairs. |
 | `binding_site` | `source`, `ligand`, `cutoff` | Binding-site residues ordered closest-first. |
+| `describe_environment` | `source`, `ligand`, `cutoff` | LLM-ready prose plus structured features (hydrophobic wall, aromatics, H-bonds, salt bridges) for a ligand pocket. |
 | `list_ligands` | `source`, `exclude_water`, `exclude_ions` | HETATM groups present (run before `binding_site`). |
 | `chain_interfaces` | `source`, `chain_a`, `chain_b`, `cutoff` | Interface residues for a chain pair, or the all-pairs chain contact matrix. |
 

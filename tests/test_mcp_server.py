@@ -55,6 +55,7 @@ EXPECTED_TOOLS = {
     "secondary_structure",
     "contact_map",
     "binding_site",
+    "describe_environment",
     "molecular_graph",
     "coarse_grain",
     "sasa",
@@ -150,6 +151,18 @@ def test_binding_site_auto_ligand(server):
     assert out["n_residues"] > 0
     first = out["residues"][0]
     assert first["min_distance"] <= out["cutoff"]
+
+
+def test_describe_environment(server):
+    out = _json(server, "describe_environment", source=TRYPSIN)
+    # A natural-language prompt plus structured features for the BEN pocket.
+    assert "BEN" in out["prompt"]
+    features = out["features"]
+    assert features["n_residues"] > 0
+    # Benzamidine forms the canonical salt bridge to Asp189; check both the
+    # structured record and that it surfaces in the prose.
+    assert any(sb["resname"] == "ASP" for sb in features["salt_bridges"])
+    assert "electrostatic" in out["prompt"]
 
 
 def test_molecular_graph(server):

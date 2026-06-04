@@ -884,6 +884,22 @@ class Molecule:
 
         return binding_site(self, ligand=ligand, cutoff=cutoff)
 
+    def select_pocket(self, ligand=None, cutoff: float = 4.5):
+        """Select the binding pocket around a ligand as a
+        :class:`molscope.contacts.Pocket`.
+
+        Like :meth:`binding_site`, but the returned :class:`~molscope.contacts.Pocket`
+        keeps a reference to this molecule, so ``describe_environment`` and the
+        other coordinate-dependent helpers can be called without re-passing it::
+
+            prompt = mol.select_pocket(ligand="BEN", cutoff=4.5).describe_environment()
+
+        See :func:`molscope.contacts.select_pocket`.
+        """
+        from .contacts import select_pocket
+
+        return select_pocket(self, ligand=ligand, cutoff=cutoff)
+
     def rmsd(self, other: Molecule, align: bool = False) -> float:
         """Root-mean-square deviation from ``other`` (matched by index).
 
