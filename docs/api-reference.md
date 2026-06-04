@@ -14,6 +14,12 @@
 - `molscope.pocket_descriptor_feature_names("pocket-basic")`: stable binding-pocket descriptor columns.
 - `molscope.node_feature_names(preset)`, `edge_feature_names(preset)`: atom/bond graph preset columns.
 - `molscope.residue_node_feature_names(preset)`, `residue_edge_feature_names(preset)`: residue contact graph preset columns.
+
+Graph-dataset assembly (the ML on-ramp):
+
+- `molscope.build_dataset(source, *, fmt="pyg", node_features=..., labels=..., split=..., cache_dir=...)`: read, featurise, label-join, and split a folder/list of structures into a `GraphDataset`. `cache_dir=` enables an on-disk featurisation cache.
+- `molscope.fetch_dataset(ids, *, labels=..., **build_kwargs)`: same, starting from RCSB accessions (downloads each, cached, then `build_dataset`).
+- `GraphDataset`: holds `.graphs`/`.ids`/`.labels`/`.skipped`, the `.train`/`.val`/`.test` split views, `.summary()`, and `.save()`/`.load()`. `.loader(split=None, *, batch_size=1, shuffle=None)` returns a PyG/DGL batching `DataLoader`; `.standardize_targets()` fits a train-only `TargetScaler` and standardises `data.y`.
 - `molscope.interface_residues(mol, chain_a, chain_b, cutoff=5.0)`, `chain_contact_matrix(mol, cutoff=5.0)`: chain interfaces.
 - `molscope.ligands(mol, ...)`, `binding_site(mol, ligand=None, cutoff=4.5)`: ligand detection and binding-site residues.
 - `molscope.backbone_torsions(mol)`: per-residue phi/psi/omega.

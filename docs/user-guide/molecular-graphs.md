@@ -255,6 +255,30 @@ re-labelling or re-splitting a cached set is free. In-memory `Molecule` sources
 are not cached (they have no stable on-disk identity), and a corrupt entry is
 simply recomputed.
 
+### Build from RCSB accessions (benchmark tables)
+
+Published benchmarks usually arrive as a table of PDB accessions and a target
+column. [`fetch_dataset`](../api-reference.md) is the adapter for that shape: it
+downloads each accession from the RCSB (cached under `root`, so a rerun does not
+re-download), then runs `build_dataset` on the files.
+
+```python
+labels = {"1fqy": 0.0, "3ptb": 1.0, "1ubq": 0.0}    # your accession -> target
+ds = ms.fetch_dataset(
+    labels.keys(),
+    labels=labels,                # or a CSV path keyed by the lowercased id
+    fmt="pyg",
+    node_features="ml",
+    split=(0.8, 0.1, 0.1),
+    cache_dir=".graph_cache",     # forwarded to build_dataset's featurisation cache
+)
+```
+
+Accessions are case-insensitive. A download that fails (network error, unknown
+id) is recorded in `ds.skipped` and skipped rather than aborting the build,
+unless you pass `on_error="raise"`. MolScope does not ship curated label tables —
+bring your own from the benchmark you are reproducing.
+
 ### Mini-batches for a training loop
 
 For `fmt="pyg"` or `fmt="dgl"`, [`ds.loader()`](../api-reference.md) hands back

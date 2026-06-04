@@ -11,6 +11,16 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``fetch_dataset(ids, labels=..., ...)``: build a dataset directly from RCSB
+  accessions. The adapter for a published *accession + label* table — it
+  downloads each PDB id (cached under ``root`` so reruns do not re-download) and
+  hands the files to ``build_dataset`` (so the featurisation cache, splits, and
+  feature presets all apply via ``**build_kwargs``). Accessions are
+  case-insensitive; a failed download is recorded in ``ds.skipped`` and skipped
+  unless ``on_error="raise"``. No curated label tables are bundled — callers
+  bring the benchmark's own labels. ``TargetScaler`` is now also exported at the
+  top level.
+
 - ``GraphDataset.standardize_targets()`` and ``TargetScaler``: fit a target mean
   and standard deviation on the **train** split only, rewrite every labelled
   graph's ``data.y`` into standardised space, and return a ``TargetScaler`` whose
