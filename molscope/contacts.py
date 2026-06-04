@@ -6,10 +6,13 @@ metadata and the ``hetero`` (ATOM vs HETATM) flag that ``Molecule`` carries:
 * **Interfaces** -- which residues of one chain contact another chain
   (:func:`interface_residues`, :func:`chain_contact_matrix`).
 * **Binding sites** -- which protein residues surround a ligand HETATM group
-  (:func:`ligands`, :func:`binding_site`).
+  (:func:`ligands`, :func:`binding_site`, :func:`select_pocket`), and a
+  chemistry-aware natural-language description of the pocket for LLM / RAG
+  prompts (:func:`analyze_pocket`, :meth:`Pocket.describe_environment`).
 
     mol.interface("A", "B")          # residues across the A/B interface
     mol.binding_site(cutoff=4.5)     # protein residues around the bound ligand
+    mol.select_pocket(ligand="BEN").describe_environment()   # prompt-ready prose
 """
 
 from __future__ import annotations
@@ -33,6 +36,39 @@ AMINO_ACID_RESNAMES = (
     "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
 )
 POCKET_DESCRIPTOR_PRESETS = ("pocket-basic",)
+
+# -- semantic-description heuristics ----------------------------------------
+# Pure-geometry element/residue tables used by describe_environment to translate
+# a pocket into chemistry-aware prose. None of this is a force field: bonds are
+# inferred from heavy-atom proximity, not from a topology or partial charges.
+
+#: Heavy atoms that can donate or accept a hydrogen bond (hydrogens are usually
+#: absent in crystal structures, so donor/acceptor is not distinguished).
+HBOND_ELEMENTS = frozenset({"N", "O", "F"})
+
+#: Apolar side chains that line a hydrophobic pocket wall.
+HYDROPHOBIC_RESNAMES = frozenset({
+    "ALA", "VAL", "LEU", "ILE", "MET", "PHE", "TRP", "PRO", "CYS",
+})
+
+#: Side chains with aromatic rings that can stack or cation-pi with a ligand.
+AROMATIC_RESNAMES = frozenset({"PHE", "TYR", "TRP", "HIS"})
+
+#: Side-chain atoms that carry a formal charge at neutral pH (textbook, not
+#: pKa-aware): anchors the protein end of a salt bridge / electrostatic contact.
+CATIONIC_ATOMS = frozenset({
+    ("ARG", "NH1"), ("ARG", "NH2"), ("ARG", "NE"),
+    ("LYS", "NZ"), ("HIS", "ND1"), ("HIS", "NE2"),
+})
+ANIONIC_ATOMS = frozenset({
+    ("ASP", "OD1"), ("ASP", "OD2"), ("GLU", "OE1"), ("GLU", "OE2"),
+})
+
+#: Prose name for the charged group of each ionisable residue.
+_CHARGED_GROUP_NAME = {
+    "ASP": "carboxylate", "GLU": "carboxylate",
+    "ARG": "guanidinium", "LYS": "ammonium", "HIS": "imidazole",
+}
 
 
 @dataclass(frozen=True)
@@ -213,6 +249,32 @@ class BindingSite:
             return _pocket_basic_descriptors(molecule, self)
         raise AssertionError("unreachable")
 
+    def environment(self, molecule: Molecule, **thresholds) -> PocketEnvironment:
+        """Analyse the pocket into chemistry-aware interaction features.
+
+        Returns a :class:`PocketEnvironment` holding the hydrophobic wall,
+        aromatic residues, hydrogen bonds, and salt-bridge / electrostatic
+        contacts detected by pure-geometry heuristics. ``thresholds`` overrides
+        the distance cut-offs (``hbond_cutoff``, ``salt_bridge_cutoff``,
+        ``hydrophobic_cutoff``, ``aromatic_cutoff``). See
+        :func:`analyze_pocket`.
+        """
+        return analyze_pocket(molecule, self, **thresholds)
+
+    def describe_environment(self, molecule: Molecule, **thresholds) -> str:
+        """Describe the pocket as a biochemist-style natural-language paragraph.
+
+        Translates the binding pocket into prose suitable as LLM / RAG prompt
+        context: the hydrophobic wall, aromatic residues, hydrogen bonds, and
+        salt-bridge / electrostatic networks, with distances in angstrom.
+        ``thresholds`` is forwarded to :meth:`environment`.
+
+        The interactions are distance-only heuristics (see :func:`analyze_pocket`)
+        and the prose is phrased accordingly ("likely", "possible"); confirm with
+        a dedicated interaction profiler such as PLIP or ProLIF.
+        """
+        return self.environment(molecule, **thresholds).text()
+
     def plot(self, molecule: Molecule, include_ligand: bool = True, **kwargs):
         """Plot the binding-site residue subset.
 
@@ -228,6 +290,122 @@ class BindingSite:
             f"BindingSite({self.ligand.residue_id.label()}: "
             f"{len(self.residues)} residues < {self.cutoff} A)"
         )
+
+
+@dataclass(frozen=True)
+class PocketInteraction:
+    """A single detected ligand-pocket polar or charged interaction.
+
+    ``kind`` is ``"hydrogen_bond"`` or ``"salt_bridge"``. ``ligand_atom`` and
+    ``residue_atom`` are atom names (falling back to element symbols when the
+    structure carries no atom names); ``distance`` is the heavy-atom separation
+    in angstrom.
+    """
+
+    kind: str
+    residue: Residue
+    residue_atom: str
+    ligand_atom: str
+    distance: float
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "residue": self.residue.residue_id.label(),
+            "resname": self.residue.resname,
+            "residue_atom": self.residue_atom,
+            "ligand_atom": self.ligand_atom,
+            "distance": round(float(self.distance), 2),
+        }
+
+
+@dataclass
+class PocketEnvironment:
+    """Chemistry-aware summary of a binding pocket, ready for LLM prompts.
+
+    Produced by :func:`analyze_pocket`. :meth:`text` renders the biochemist-style
+    paragraph; :meth:`to_dict` returns the structured findings for JSON / RAG use.
+    """
+
+    ligand: LigandResidue
+    cutoff: float
+    n_residues: int
+    hydrophobic_residues: list[Residue]
+    aromatic_residues: list[Residue]
+    hydrogen_bonds: list[PocketInteraction]
+    salt_bridges: list[PocketInteraction]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ligand": self.ligand.residue_id.label(),
+            "cutoff": float(self.cutoff),
+            "n_residues": int(self.n_residues),
+            "hydrophobic_residues": [r.residue_id.label() for r in self.hydrophobic_residues],
+            "aromatic_residues": [r.residue_id.label() for r in self.aromatic_residues],
+            "hydrogen_bonds": [hb.to_dict() for hb in self.hydrogen_bonds],
+            "salt_bridges": [sb.to_dict() for sb in self.salt_bridges],
+        }
+
+    def text(self) -> str:
+        """Render the environment as a natural-language paragraph."""
+        return _environment_prose(self)
+
+    def __repr__(self) -> str:
+        return (
+            f"PocketEnvironment({self.ligand.residue_id.label()}: "
+            f"{len(self.hydrophobic_residues)} hydrophobic, "
+            f"{len(self.hydrogen_bonds)} H-bonds, "
+            f"{len(self.salt_bridges)} salt bridges)"
+        )
+
+
+@dataclass(frozen=True)
+class Pocket:
+    """A binding pocket bound to its parent molecule.
+
+    Returned by :meth:`molscope.Molecule.select_pocket`; pairs a
+    :class:`BindingSite` with the :class:`~molscope.molecule.Molecule` it came
+    from so the coordinate-dependent helpers can be called without re-passing the
+    molecule, e.g. ``mol.select_pocket(ligand="BEN").describe_environment()``.
+    """
+
+    molecule: Molecule
+    site: BindingSite
+
+    @property
+    def ligand(self) -> LigandResidue:
+        return self.site.ligand
+
+    @property
+    def cutoff(self) -> float:
+        return self.site.cutoff
+
+    @property
+    def residues(self) -> list[Residue]:
+        return self.site.residues
+
+    def environment(self, **thresholds) -> PocketEnvironment:
+        """Analyse the pocket into :class:`PocketEnvironment` features."""
+        return analyze_pocket(self.molecule, self.site, **thresholds)
+
+    def describe_environment(self, **thresholds) -> str:
+        """Biochemist-style natural-language description of the pocket."""
+        return self.environment(**thresholds).text()
+
+    def descriptors(self, preset: str = "pocket-basic") -> dict[str, float]:
+        """Fixed-size pocket descriptors (see :meth:`BindingSite.descriptors`)."""
+        return self.site.descriptors(self.molecule, preset=preset)
+
+    def to_molecule(self, include_ligand: bool = False) -> Molecule:
+        """Subset molecule for the pocket residues (see :meth:`BindingSite.to_molecule`)."""
+        return self.site.to_molecule(self.molecule, include_ligand=include_ligand)
+
+    def plot(self, include_ligand: bool = True, **kwargs):
+        """Plot the pocket residue subset (see :meth:`BindingSite.plot`)."""
+        return self.site.plot(self.molecule, include_ligand=include_ligand, **kwargs)
+
+    def __repr__(self) -> str:
+        return f"Pocket({self.site!r})"
 
 
 # -- internals --------------------------------------------------------------
@@ -589,3 +767,304 @@ def binding_site(
         contacts=contacts,
         residue_atom_indices=[residue_atoms[k] for k in order],
     )
+
+
+def select_pocket(molecule: Molecule, ligand=None, cutoff: float = 4.5) -> Pocket:
+    """Select the binding pocket around a ligand as a :class:`Pocket`.
+
+    A thin wrapper over :func:`binding_site` that keeps a reference to
+    ``molecule`` so the coordinate-dependent helpers (notably
+    :meth:`Pocket.describe_environment`) can be called without re-passing it.
+    ``ligand`` and ``cutoff`` are forwarded to :func:`binding_site`.
+    """
+    return Pocket(molecule, binding_site(molecule, ligand=ligand, cutoff=cutoff))
+
+
+# -- semantic pocket description --------------------------------------------
+
+
+def _norm_element(value: str) -> str:
+    return str(value).strip().upper()
+
+
+def _atom_label(atom_names, element: str, index: int) -> str:
+    """Atom name for prose, falling back to the element symbol when unnamed."""
+    if atom_names:
+        name = str(atom_names[index]).strip()
+        if name:
+            return name
+    return element or "atom"
+
+
+def _residue_tag(residue: Residue) -> str:
+    """Compact ``RESNAME<resid><icode>`` tag, e.g. ``PHE70`` or ``ASP100A``."""
+    return f"{residue.resname}{residue.resid}{residue.insertion_code}"
+
+
+def _ligand_charge_sign(element: str, formal_charge) -> int:
+    """Heuristic sign of a ligand atom's charge for electrostatic detection.
+
+    Uses the formal charge when the structure carries one; otherwise treats a
+    nitrogen as a potential cation (amine/ammonium) and an oxygen as a potential
+    anion (carboxylate/hydroxyl), which is enough to pair against a formally
+    charged protein side chain.
+    """
+    if formal_charge:
+        return int(np.sign(formal_charge))
+    if element == "N":
+        return 1
+    if element == "O":
+        return -1
+    return 0
+
+
+def analyze_pocket(
+    molecule: Molecule,
+    site: BindingSite,
+    *,
+    hbond_cutoff: float = 3.5,
+    salt_bridge_cutoff: float = 4.0,
+    hydrophobic_cutoff: float = 4.5,
+    aromatic_cutoff: float = 5.5,
+) -> PocketEnvironment:
+    """Translate a :class:`BindingSite` into :class:`PocketEnvironment` features.
+
+    Pure-NumPy geometric heuristics over heavy-atom distances:
+
+    * **Hydrogen bonds** -- N/O/F ligand atom within ``hbond_cutoff`` of an N/O/F
+      protein atom (donor vs acceptor is not distinguished, as crystal hydrogens
+      are usually absent).
+    * **Salt bridges / electrostatic** -- a formally charged side-chain atom
+      (Asp/Glu carboxylate, Arg/Lys/His cation) within ``salt_bridge_cutoff`` of a
+      complementary-charge ligand atom.
+    * **Hydrophobic wall** -- apolar side chains with a carbon within
+      ``hydrophobic_cutoff`` of a ligand carbon.
+    * **Aromatic residues** -- Phe/Tyr/Trp/His with a carbon within
+      ``aromatic_cutoff`` of a ligand carbon (candidate pi-stacking).
+
+    The closest contact per residue is kept for hydrogen bonds and salt bridges.
+
+    These are distance-only heuristics: there is no donor/acceptor typing,
+    hydrogen-bond angle criterion, or protonation-state model, so the results are
+    candidates rather than verified interactions. For rigorous interaction
+    profiling use a dedicated tool such as PLIP or ProLIF.
+    """
+    lig_idx = np.asarray(site.ligand.atom_indices, dtype=int)
+    coords = molecule.coords
+    elements = molecule.elements or [""] * len(molecule)
+    atom_names = molecule.atom_names
+    formal = molecule.formal_charges if len(molecule.formal_charges) else None
+
+    lig_elems = [_norm_element(elements[i]) for i in lig_idx]
+    lig_coords = coords[lig_idx]
+
+    # Per-residue atom indices aligned with site.residues; fall back to the
+    # contacting protein atoms grouped by residue for sites built without them.
+    residue_atom_lists = site.residue_atom_indices
+    if not residue_atom_lists or len(residue_atom_lists) != len(site.residues):
+        residue_atom_lists = _residue_atoms_from_contacts(molecule, site)
+
+    hydrophobic: list[Residue] = []
+    aromatic: list[Residue] = []
+    hydrogen_bonds: list[PocketInteraction] = []
+    salt_bridges: list[PocketInteraction] = []
+
+    for residue, atom_list in zip(site.residues, residue_atom_lists):
+        resname = residue.resname.upper()
+        atoms = np.asarray([int(i) for i in atom_list], dtype=int)
+        if len(atoms) == 0:
+            continue
+        dist = _cross_distances(coords[atoms], lig_coords)   # (n_res_atoms, n_lig)
+        res_elems = [_norm_element(elements[i]) for i in atoms]
+
+        # Hydrophobic / aromatic walls: carbon-carbon proximity.
+        carbon_res = np.array([e == "C" for e in res_elems], dtype=bool)
+        carbon_lig = np.array([e == "C" for e in lig_elems], dtype=bool)
+        if carbon_res.any() and carbon_lig.any():
+            cc = dist[np.ix_(carbon_res, carbon_lig)]
+            cc_min = float(cc.min())
+            if resname in HYDROPHOBIC_RESNAMES and cc_min <= hydrophobic_cutoff:
+                hydrophobic.append(residue)
+            if resname in AROMATIC_RESNAMES and cc_min <= aromatic_cutoff:
+                aromatic.append(residue)
+
+        # Hydrogen bonds: closest polar-polar pair for this residue.
+        hb = _closest_polar_pair(dist, res_elems, lig_elems, hbond_cutoff)
+        if hb is not None:
+            ai, lj, d = hb
+            hydrogen_bonds.append(
+                PocketInteraction(
+                    "hydrogen_bond", residue,
+                    _atom_label(atom_names, res_elems[ai], int(atoms[ai])),
+                    _atom_label(atom_names, lig_elems[lj], int(lig_idx[lj])),
+                    d,
+                )
+            )
+
+        # Salt bridges: closest charged-complementary pair for this residue.
+        sb = _closest_salt_bridge(
+            dist, residue, res_elems, atoms, lig_elems, lig_idx,
+            atom_names, formal, salt_bridge_cutoff,
+        )
+        if sb is not None:
+            salt_bridges.append(sb)
+
+    # A charged pair within H-bond range is geometrically also a hydrogen bond;
+    # report it once, as the more specific salt bridge.
+    bridged = {
+        (sb.residue.residue_id, sb.residue_atom, sb.ligand_atom) for sb in salt_bridges
+    }
+    hydrogen_bonds = [
+        hb for hb in hydrogen_bonds
+        if (hb.residue.residue_id, hb.residue_atom, hb.ligand_atom) not in bridged
+    ]
+
+    hydrogen_bonds.sort(key=lambda x: x.distance)
+    salt_bridges.sort(key=lambda x: x.distance)
+    return PocketEnvironment(
+        ligand=site.ligand,
+        cutoff=site.cutoff,
+        n_residues=len(site.residues),
+        hydrophobic_residues=hydrophobic,
+        aromatic_residues=aromatic,
+        hydrogen_bonds=hydrogen_bonds,
+        salt_bridges=salt_bridges,
+    )
+
+
+def _residue_atoms_from_contacts(molecule: Molecule, site: BindingSite) -> list[list[int]]:
+    """Group the contacting protein atoms by residue, aligned with ``site.residues``."""
+    by_residue: dict[ResidueId, list[int]] = {}
+    for protein_atom, _ in site.contacts:
+        by_residue.setdefault(molecule.residue_id(int(protein_atom)), []).append(int(protein_atom))
+    return [by_residue.get(res.residue_id, []) for res in site.residues]
+
+
+def _closest_polar_pair(dist, res_elems, lig_elems, cutoff):
+    """Closest (protein atom, ligand atom) H-bond candidate within ``cutoff``."""
+    res_polar = np.array([e in HBOND_ELEMENTS for e in res_elems], dtype=bool)
+    lig_polar = np.array([e in HBOND_ELEMENTS for e in lig_elems], dtype=bool)
+    if not res_polar.any() or not lig_polar.any():
+        return None
+    mask = res_polar[:, None] & lig_polar[None, :] & (dist <= cutoff)
+    if not mask.any():
+        return None
+    masked = np.where(mask, dist, np.inf)
+    ai, lj = np.unravel_index(int(np.argmin(masked)), masked.shape)
+    return int(ai), int(lj), float(masked[ai, lj])
+
+
+def _closest_salt_bridge(
+    dist, residue, res_elems, atoms, lig_elems, lig_idx, atom_names, formal, cutoff,
+):
+    """Closest charged-complementary (protein, ligand) pair, as a PocketInteraction."""
+    resname = residue.resname.upper()
+    atom_names_seq = atom_names or []
+
+    def protein_sign(local_i: int) -> int:
+        name = (atom_names_seq[int(atoms[local_i])].strip() if atom_names_seq else "")
+        if (resname, name) in CATIONIC_ATOMS:
+            return 1
+        if (resname, name) in ANIONIC_ATOMS:
+            return -1
+        return 0
+
+    best = None
+    for ai in range(len(res_elems)):
+        p_sign = protein_sign(ai)
+        if p_sign == 0:
+            continue
+        for lj in range(len(lig_elems)):
+            d = float(dist[ai, lj])
+            if d > cutoff:
+                continue
+            fc = int(formal[lig_idx[lj]]) if formal is not None else 0
+            l_sign = _ligand_charge_sign(lig_elems[lj], fc)
+            if l_sign != 0 and p_sign * l_sign < 0 and (best is None or d < best[2]):
+                best = (ai, lj, d)
+    if best is None:
+        return None
+    ai, lj, d = best
+    return PocketInteraction(
+        "salt_bridge", residue,
+        _atom_label(atom_names, res_elems[ai], int(atoms[ai])),
+        _atom_label(atom_names, lig_elems[lj], int(lig_idx[lj])),
+        d,
+    )
+
+
+def _environment_prose(env: PocketEnvironment) -> str:
+    """Render a :class:`PocketEnvironment` as a biochemist-style paragraph."""
+    lig = env.ligand
+    lig_name = lig.resname or "ligand"
+    where = f" (chain {lig.chain})" if lig.chain else ""
+    sentences = [
+        f"The binding pocket around ligand {lig_name}{where} is lined by "
+        f"{env.n_residues} residue{'s' if env.n_residues != 1 else ''} within "
+        f"{env.cutoff:.1f} A of the ligand."
+    ]
+
+    if env.hydrophobic_residues:
+        names = _join([_residue_tag(r) for r in env.hydrophobic_residues])
+        sentences.append(f"A hydrophobic pocket wall appears to be formed by {names}.")
+
+    if env.aromatic_residues:
+        names = _join([_residue_tag(r) for r in env.aromatic_residues])
+        verb = "rings" if len(env.aromatic_residues) > 1 else "ring"
+        sentences.append(
+            f"Aromatic {verb} from {names} may engage in pi-stacking or "
+            f"cation-pi interactions with the ligand."
+        )
+
+    if env.hydrogen_bonds:
+        parts = [
+            f"the ligand {hb.ligand_atom} and {hb.residue_atom} of "
+            f"{_residue_tag(hb.residue)} ({hb.distance:.1f} A)"
+            for hb in env.hydrogen_bonds
+        ]
+        lead = "A likely hydrogen bond is suggested between" if len(parts) == 1 else (
+            "Likely hydrogen bonds are suggested between"
+        )
+        sentences.append(f"{lead} {_join(parts)}.")
+
+    if env.salt_bridges:
+        parts = []
+        for sb in env.salt_bridges:
+            group = _CHARGED_GROUP_NAME.get(sb.residue.resname.upper(), "charged group")
+            parts.append(
+                f"the ligand {sb.ligand_atom} and the {group} of "
+                f"{_residue_tag(sb.residue)} ({sb.distance:.1f} A)"
+            )
+        lead = (
+            "A possible salt bridge / electrostatic contact is suggested between"
+            if len(parts) == 1 else
+            "Possible salt bridges / electrostatic contacts are suggested between"
+        )
+        sentences.append(f"{lead} {_join(parts)}.")
+
+    if not (env.hydrogen_bonds or env.salt_bridges):
+        sentences.append(
+            "No close polar or charged contacts were detected; the pocket "
+            "appears predominantly hydrophobic."
+        )
+
+    sentences.append(
+        "(Contacts are inferred from heavy-atom distances only -- no "
+        "donor/acceptor typing, bond-angle, or protonation-state analysis -- so "
+        "treat them as candidates and confirm with a dedicated interaction "
+        "profiler such as PLIP or ProLIF.)"
+    )
+
+    return " ".join(sentences)
+
+
+def _join(items: list[str]) -> str:
+    """Oxford-comma join: ``a``, ``a and b``, ``a, b and c``."""
+    items = list(items)
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f" and {items[-1]}"

@@ -370,6 +370,36 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
             indent=2,
         )
 
+    @server.tool(title="Describe pocket environment", annotations=READ_NET)
+    @_friendly_errors
+    def describe_environment(
+        source: str, ligand: Optional[str] = None, cutoff: float = 4.5
+    ) -> str:
+        """Describe a ligand binding pocket as LLM-ready chemistry prose.
+
+        Translates the 3D pocket around a ligand into a biochemist-style
+        paragraph plus structured interaction features, intended as prompt
+        context for LLM / RAG workflows (pocket annotation, mutation reasoning,
+        de novo design). ``ligand`` is a HETATM residue name (e.g. ``"BEN"``);
+        omit it to use the single non-solvent ligand. ``cutoff`` is the pocket
+        contact distance in angstrom.
+
+        Returns JSON with a ``prompt`` (the natural-language description) and the
+        underlying ``features``: the hydrophobic wall, aromatic residues,
+        hydrogen bonds, and salt-bridge / electrostatic contacts, each with
+        atom names and distances.
+
+        Interactions are distance-only heuristics: there is no donor/acceptor
+        typing, hydrogen-bond angle criterion, or protonation-state model, so
+        the prompt is phrased as candidates ("likely", "possible"). Treat the
+        output as a first-pass scaffold and confirm with a dedicated interaction
+        profiler such as PLIP or ProLIF for rigorous analysis.
+        """
+        from .contacts import select_pocket as _select_pocket
+
+        env = _select_pocket(_load(source), ligand=ligand, cutoff=cutoff).environment()
+        return json.dumps({"prompt": env.text(), "features": env.to_dict()}, indent=2)
+
     @server.tool(title="Molecular graph summary", annotations=READ_NET)
     @_friendly_errors
     def molecular_graph(

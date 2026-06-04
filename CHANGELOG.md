@@ -9,6 +9,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+### Added
+
+- ``mol.select_pocket(ligand=..., cutoff=...).describe_environment()``: translate
+  a 3D binding pocket into a chemistry-aware, biochemist-style natural-language
+  paragraph for LLM / RAG prompt context. Pure-NumPy geometric heuristics detect
+  the hydrophobic wall, aromatic residues, hydrogen bonds, and salt-bridge /
+  electrostatic contacts (with atom names and distances). ``select_pocket``
+  returns a ``Pocket`` (a ``BindingSite`` bound to its molecule); the structured
+  findings are also available via ``.environment()`` (a ``PocketEnvironment``
+  with ``to_dict()``) and ``BindingSite.describe_environment(mol)``. Exposed over
+  the MCP server as the ``describe_environment`` tool, which returns both the
+  ``prompt`` text and the structured ``features``.
+
 ### Documentation
 
 - Surface the graph-ML dataset on-ramp on the front pages: the README, docs

@@ -22,6 +22,7 @@ Graph-dataset assembly (the ML on-ramp):
 - `GraphDataset`: holds `.graphs`/`.ids`/`.labels`/`.skipped`, the `.train`/`.val`/`.test` split views, `.summary()`, and `.save()`/`.load()`. `.loader(split=None, *, batch_size=1, shuffle=None)` returns a PyG/DGL batching `DataLoader`; `.standardize_targets()` fits a train-only `TargetScaler` and standardises `data.y`.
 - `molscope.interface_residues(mol, chain_a, chain_b, cutoff=5.0)`, `chain_contact_matrix(mol, cutoff=5.0)`: chain interfaces.
 - `molscope.ligands(mol, ...)`, `binding_site(mol, ligand=None, cutoff=4.5)`: ligand detection and binding-site residues.
+- `molscope.select_pocket(mol, ligand=None, cutoff=4.5)` (also `Molecule.select_pocket(...)`): returns a `Pocket` (a `BindingSite` bound to its molecule) whose `describe_environment()` renders a chemistry-aware natural-language paragraph for LLM / RAG prompts; `environment()`/`analyze_pocket(mol, site)` return the structured `PocketEnvironment`.
 - `molscope.backbone_torsions(mol)`: per-residue phi/psi/omega.
 - `molscope.sasa(mol, probe_radius=1.4, n_points=192, level="atom")`: approximate Shrake-Rupley solvent-accessible surface area (also `Molecule.sasa(...)`).
 
@@ -31,8 +32,9 @@ Residue identity helpers:
 - `molscope.ResidueGroup`: yielded by `Molecule.residue_groups()`; has `.residue_id` and still unpacks as `(atom_indices, resname, resid, chain)`.
 
 `BindingSite` results expose `to_records()`, `to_molecule(mol)`,
-`descriptors(mol, preset="pocket-basic")`, and `plot(mol)` for residue tables,
-pocket descriptor extraction, and quick figures.
+`descriptors(mol, preset="pocket-basic")`, `describe_environment(mol)`, and
+`plot(mol)` for residue tables, pocket descriptor extraction, LLM-ready prose,
+and quick figures.
 
 ## Molecule
 
