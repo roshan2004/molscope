@@ -47,48 +47,51 @@ itself be an honest, useful finding.
 
 ## Results
 
-Model `gpt-4.1`, 45 protein-ligand complexes, 4 candidates each (chance = 25%),
-top-1 accuracy with 95% bootstrap confidence intervals:
+Model `gpt-4.1`, 96 protein-ligand complexes (the full panel, `--full`), 4
+candidates each (chance = 25%), top-1 accuracy with 95% bootstrap confidence
+intervals:
 
 | arm | accuracy | 95% CI | correct/total |
 | --- | --- | --- | --- |
-| `coords` | 0.20 | [0.09, 0.31] | 9/45 |
-| `residues` | 0.22 | [0.11, 0.36] | 10/45 |
-| **`prose`** | **0.31** | [0.18, 0.44] | 14/45 |
-| `features` | 0.24 | [0.13, 0.38] | 11/45 |
+| `coords` | 0.32 | [0.23, 0.42] | 31/96 |
+| `residues` | 0.34 | [0.25, 0.44] | 33/96 |
+| **`prose`** | **0.47** | [0.38, 0.57] | 45/96 |
+| `features` | 0.46 | [0.35, 0.56] | 44/96 |
 
 Prose vs residue list (McNemar on the same items): prose correct where residues
-wrong = **5**; residues correct where prose wrong = **1**; exact two-sided
-p = **0.22**.
+wrong = **18**; residues correct where prose wrong = **6**; exact two-sided
+p = **0.023**.
 
 What this says, read honestly:
 
-- **The prose is the best representation.** It beats the residue list by 9
-  points and raw coordinates by 11, and wins the head-to-head 5-to-1. The
-  direction is consistent with the feature's premise: the geometry-derived
+- **The prose is the best representation, significantly so.** It beats the
+  residue list by 13 points and raw coordinates by 15, and wins the head-to-head
+  18-to-6. On the same-item McNemar test that contrast is significant
+  (p = 0.023). The direction matches the feature's premise: the geometry-derived
   complementarity the prose adds (which ligand group sits against which pocket
   group) helps the model pick the matching ligand.
-- **Raw coordinates are at chance** (0.20 vs 25%), confirming the "LLMs cannot
-  read 3D coordinates" motivation directly.
-- **Natural language beat the structured dict** (prose 0.31 vs features 0.24)
-  even though they carry the same facts -- a tentative hint that the prose
-  framing, not just the content, is doing useful work.
-- **It is not yet statistically significant.** At n=45 the McNemar p-value is
-  0.22 and the confidence intervals overlap. The honest conclusion is
-  *suggestive but underpowered*: the effect points the right way and is
-  consistent across the contrast, but a larger panel is needed to confirm it.
-  Run `--full` (adds `PANEL_EXTRA`) for more power.
+- **The residue list and raw coordinates land together near 0.33**, a third of
+  the panel, well below prose. Coordinates are no longer at chance on the larger
+  panel, but they carry no advantage over the residue names.
+- **Natural language ties the structured dict** (prose 0.47 vs features 0.46):
+  on the full panel the gain is in the *content* the description surfaces, not
+  the prose framing per se. The two formats of the same geometry-derived facts
+  perform equivalently, and both clearly beat the residue list.
 
 This is a real, not a manufactured, result: a controlled, memorisation-guarded
-test shows the description helping, while being candid that one 45-complex task
-does not yet settle the question.
+test on a 96-complex panel shows the description helping by a statistically
+significant margin over the representations MolScope could already emit.
+
+An earlier underpowered run on the 45-complex base panel pointed the same way
+(prose 0.31 vs residues 0.22) but did not reach significance (McNemar p = 0.22);
+doubling the panel with `--full` confirmed the effect.
 
 ## Reproduce
 
 ```bash
 # Needs OPENAI_API_KEY.
-.venv/bin/python scripts/eval_pocket_prose.py --n 8 --model gpt-4o-mini   # quick pilot
-.venv/bin/python scripts/eval_pocket_prose.py --model gpt-4.1 --csv eval.csv
+.venv/bin/python scripts/eval_pocket_prose.py --n 8 --model gpt-4o-mini          # quick pilot
+.venv/bin/python scripts/eval_pocket_prose.py --model gpt-4.1 --full --csv eval.csv  # full 96-complex panel (the reported result)
 ```
 
 The harness internals (decoy sampling, representation builders, answer parsing,
