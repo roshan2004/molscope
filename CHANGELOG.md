@@ -24,6 +24,17 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Validation
 
+- Downstream LLM utility eval for ``describe_environment``: a controlled,
+  memorisation-guarded representation ablation on a pocket→ligand matching task
+  (``scripts/eval_pocket_prose.py``, offline-tested in
+  ``tests/test_eval_pocket_prose.py``, documented in ``docs/llm-eval.md``). With
+  ``gpt-4.1`` over 45 complexes (chance 25%), the prose is the best pocket
+  representation (accuracy 0.31) ahead of the bare residue list (0.22), the
+  structured feature dict (0.24), and raw coordinates (0.20, at chance); prose
+  beats the residue list 5-to-1 in the head-to-head, though at n=45 this is
+  suggestive rather than significant (McNemar p=0.22). Honest, reproducible
+  evidence that the description helps, with the power limitation stated.
+
 - Characterise the ``describe_environment`` interaction heuristics against PLIP
   (Adasme et al., *NAR* 2021) at residue granularity across the seven-complex
   panel. New Tier-2 reference test
