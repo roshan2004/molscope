@@ -28,12 +28,14 @@ API changes; these are called out under **Changed** where they occur.
   memorisation-guarded representation ablation on a pocket→ligand matching task
   (``scripts/eval_pocket_prose.py``, offline-tested in
   ``tests/test_eval_pocket_prose.py``, documented in ``docs/llm-eval.md``). With
-  ``gpt-4.1`` over 45 complexes (chance 25%), the prose is the best pocket
-  representation (accuracy 0.31) ahead of the bare residue list (0.22), the
-  structured feature dict (0.24), and raw coordinates (0.20, at chance); prose
-  beats the residue list 5-to-1 in the head-to-head, though at n=45 this is
-  suggestive rather than significant (McNemar p=0.22). Honest, reproducible
-  evidence that the description helps, with the power limitation stated.
+  ``gpt-4.1`` over the full 96-complex panel (``--full``, chance 25%), the prose
+  is the best pocket representation (accuracy 0.47) ahead of the bare residue
+  list (0.34), the structured feature dict (0.46), and raw coordinates (0.32);
+  prose beats the residue list 18-to-6 in the head-to-head, a statistically
+  significant margin on the same-item McNemar test (p=0.023). Honest,
+  reproducible evidence that the description significantly helps a downstream
+  task. (An earlier 45-complex run pointed the same way at p=0.22; doubling the
+  panel confirmed the effect.)
 
 - Characterise the ``describe_environment`` interaction heuristics against PLIP
   (Adasme et al., *NAR* 2021) at residue granularity across the seven-complex
