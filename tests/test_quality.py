@@ -157,3 +157,65 @@ def test_cli_qc_missing_source():
     with pytest.raises(SystemExit) as exc:
         main(["qc"])
     assert exc.value.code == 2
+
+
+def test_quality_report_on_cif_runs_validation(capsys):
+    # Exercises the mmCIF branch: with gemmi present the report validates and
+    # notes/warns; without it, a graceful "not validated" note is recorded.
+    report = quality_report(os.path.join(FIXTURES, "insertion_codes.cif"))
+    assert report.fmt == ".cif"
+    assert report.chains  # the CIF carries chain ids
+    blob = report.notes + report.warnings
+    assert any("mmCIF" in line for line in blob)
+
+
+def test_quality_report_flags_blank_element_symbols():
+    # A molecule whose second atom has an empty element symbol.
+    mol = ms.Molecule(coords=[[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]], elements=["C", ""])
+    report = quality_report(mol)
+    assert report.blank_elements == 1
+    assert not report.clean
+    assert any("no element symbol" in i for i in report.issues)
+
+
+def test_quality_report_single_atom_has_no_bonds():
+    mol = ms.Molecule(coords=[[0.0, 0.0, 0.0]], elements=["C"])
+    report = quality_report(mol)
+    assert report.bond_source == "none"
+    assert report.n_bonds == 0
+
+
+def test_quality_report_empty_molecule_is_flagged():
+    from molscope.quality import QualityReport
+
+    empty = QualityReport(path="x", fmt="", n_atoms=0)
+    assert not empty.clean
+    assert "no atoms parsed" in empty.issues
+
+
+def test_report_rendering_covers_all_sections():
+    # Build a fully-populated report and render every optional section once.
+    from molscope.quality import QualityReport
+
+    report = QualityReport(
+        path="busy.pdb", fmt=".pdb", n_atoms=10, n_models=3, chains=["A", "B"],
+        n_residues=4, ligands={"BEN": 1}, n_waters=2, n_ions=1,
+        n_hetero_atoms=3, missing_metadata=["atom names"],
+        unknown_elements={"XX": 1}, blank_elements=1, bond_source="inferred",
+        n_bonds=9, altloc_atoms=2, low_occupancy_atoms=2,
+        warnings=["mmCIF invalid: bad"], notes=["some note"],
+    )
+    summary = report.summary()
+    assert "3 models" in summary
+    assert "chains A,B" in summary
+    assert "1 ligand(s)" in summary
+    assert "issues:" in summary
+
+    md = report.report_markdown()
+    for section in ("## Issues", "## Ligands", "Waters:", "## Alternate locations",
+                    "## Metadata not carried", "## Notes"):
+        assert section in md
+
+    payload = report.to_dict()
+    assert payload["n_models"] == 3
+    assert payload["clean"] is False
