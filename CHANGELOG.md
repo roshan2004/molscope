@@ -11,6 +11,18 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``molscope presets`` / ``ms.list_presets(category=None)``: a discoverable
+  catalogue of every feature and mapping preset (descriptor, graph node/edge,
+  residue-graph node/edge, and coarse-grain bead mappings). Each entry carries a
+  short description, the APIs / CLI flags that accept it, and the exact feature
+  names it expands to — sourced from the canonical ``*_feature_names`` functions
+  so the catalogue can never drift from what the presets produce. The CLI groups
+  them by kind and takes an optional category (``molscope presets graph``),
+  ``--features`` to print the full name lists, and ``--json``. Enumerating names
+  needs no optional backends (even ``rdkit-basic``). Also exposes
+  ``coarsegrain.COARSE_GRAIN_MAPPINGS`` as the single source of truth for the
+  built-in bead mappings.
+
 - ``molscope qc`` / ``ms.quality_report(source)``: a lightweight, format-agnostic
   structure-quality report to run *before* analysis. Reads a ``.pdb`` / ``.cif`` /
   ``.xyz`` / ``.sdf`` file (or an in-memory ``Molecule``) once and inventories

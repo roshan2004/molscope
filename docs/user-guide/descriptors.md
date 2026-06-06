@@ -63,6 +63,11 @@ Preset options:
   and distance histograms.
 - `rdkit-basic`: `native-basic` plus a stable subset of RDKit scalar descriptors.
 
+!!! tip "Discover presets"
+    Forgot the names? `ms.list_presets("descriptors")` (or `molscope presets
+    descriptors` from the shell) lists every preset with a description and the
+    exact feature columns it produces. `molscope presets` covers all categories.
+
 The gyration-tensor shape descriptors in `native-3d` come from the eigenvalues
 `λ₁ ≤ λ₂ ≤ λ₃` of the gyration tensor (recovered from the mass-weighted inertia
 moments): asphericity `b = λ₃ − ½(λ₁+λ₂)` grows as a structure elongates,

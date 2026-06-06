@@ -122,6 +122,7 @@ from .plotting import (
     plot_rmsd_heatmap,
     view_mapping,
 )
+from .presets import PresetInfo, list_presets
 from .quality import QualityReport, quality_report
 from .sasa import ResidueExposure, relative_sasa, sasa
 from .structure_prep import StructureReport, prepare_structure
@@ -221,6 +222,8 @@ __all__ = [
     "StructureReport",
     "quality_report",
     "QualityReport",
+    "list_presets",
+    "PresetInfo",
     "write_cg_index",
     "write_cg_itp",
     "write_cg_mapping",

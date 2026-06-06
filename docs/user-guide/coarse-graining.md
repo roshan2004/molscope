@@ -14,6 +14,9 @@ cg = mol.coarse_grain("martini")
 The result is still a `Molecule`, so it can be plotted, transformed, converted
 to a graph, and analyzed.
 
+Run `molscope presets coarse-grain` (or `ms.list_presets("coarse-grain")`) to
+list the built-in bead mappings.
+
 ## Built-in teaching mappings
 
 ### Residue centre of mass

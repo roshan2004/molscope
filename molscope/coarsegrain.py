@@ -57,6 +57,11 @@ from .molecule import Molecule
 _MAPPING_FORMAT = "molscope-cg-mapping"
 _MAPPING_VERSION = 2
 
+# Built-in named bead mappings accepted by :func:`coarse_grain` (a custom dict
+# mapping may be passed instead). The single source of truth for the CLI
+# ``--mapping`` choices and the preset catalogue.
+COARSE_GRAIN_MAPPINGS = ("residue_com", "residue_centroid", "martini")
+
 _BACKBONE = ("N", "CA", "C", "O", "OXT")
 
 
