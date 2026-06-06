@@ -388,6 +388,22 @@ def main(argv=None) -> int:
         "--out", "-o", metavar="PATH", help="write a Markdown report to PATH",
     )
 
+    # -- QC subcommand -----------------------------------------------------
+    qc_quality_parser = subparsers.add_parser(
+        "qc",
+        help="lightweight structure-quality report (atoms, chains, ligands, "
+        "metadata, elements, bonds, altLoc, CIF/PDB warnings)",
+    )
+    qc_src = qc_quality_parser.add_mutually_exclusive_group(required=True)
+    qc_src.add_argument("file", nargs="?", help="path to a structure file")
+    qc_src.add_argument("--fetch", metavar="PDBID", help="download from RCSB by id")
+    qc_quality_parser.add_argument(
+        "--json", action="store_true", help="print the full JSON report",
+    )
+    qc_quality_parser.add_argument(
+        "--out", "-o", metavar="PATH", help="write a Markdown report to PATH",
+    )
+
     # -- COARSE-GRAIN subcommand -------------------------------------------
     cg_parser = subparsers.add_parser(
         "coarse-grain",
@@ -434,6 +450,8 @@ def main(argv=None) -> int:
         return _run_dock_report(args)
     if args.command == "structure-report":
         return _run_structure_report(args)
+    if args.command == "qc":
+        return _run_qc(args)
     if args.command == "coarse-grain":
         return _run_coarse_grain(args)
 
@@ -606,6 +624,39 @@ def _run_structure_report(args: argparse.Namespace) -> int:
         report = prepare_structure(source, protonation=args.protonation, ph=args.ph)
     except (OSError, ValueError, ImportError) as exc:
         print(f"structure-report failed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        import json
+
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(report.summary())
+
+    if args.out:
+        try:
+            with open(args.out, "w", encoding="utf-8") as handle:
+                handle.write(report.report_markdown())
+        except OSError as exc:
+            print(f"could not write {args.out}: {exc}", file=sys.stderr)
+            return 2
+        print(f"wrote {args.out}")
+    return 0
+
+
+def _run_qc(args: argparse.Namespace) -> int:
+    from .quality import quality_report
+
+    try:
+        if args.fetch:
+            from .io import fetch_file
+
+            source = fetch_file(args.fetch)
+        else:
+            source = args.file
+        report = quality_report(source)
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"qc failed: {exc}", file=sys.stderr)
         return 2
 
     if args.json:

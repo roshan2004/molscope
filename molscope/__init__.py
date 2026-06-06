@@ -122,6 +122,7 @@ from .plotting import (
     plot_rmsd_heatmap,
     view_mapping,
 )
+from .quality import QualityReport, quality_report
 from .sasa import ResidueExposure, relative_sasa, sasa
 from .structure_prep import StructureReport, prepare_structure
 
@@ -218,6 +219,8 @@ __all__ = [
     "validate_cif",
     "prepare_structure",
     "StructureReport",
+    "quality_report",
+    "QualityReport",
     "write_cg_index",
     "write_cg_itp",
     "write_cg_mapping",
