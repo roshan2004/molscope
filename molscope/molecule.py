@@ -563,6 +563,28 @@ class Molecule:
         moments, axes = np.linalg.eigh(self.inertia_tensor())
         return axes[:, np.argsort(moments)]
 
+    def cross_section_profile(
+        self,
+        *,
+        axis="principal",
+        thickness: float = 1.0,
+        method: str = "hull",
+        environment=None,
+    ):
+        """Cross-sectional area along ``axis``, slice by slice.
+
+        Slices the structure into bands of ``thickness`` angstrom perpendicular to
+        ``axis`` (default the long principal axis) and measures each band's area —
+        the "how wide at each point along its length" profile. See
+        :func:`molscope.cross_section_profile` for the parameters; returns a
+        :class:`~molscope.crosssection.CrossSectionProfile`.
+        """
+        from .crosssection import cross_section_profile
+
+        return cross_section_profile(
+            self, axis=axis, thickness=thickness, method=method, environment=environment
+        )
+
     @property
     def formula(self) -> str:
         """Hill-order molecular formula, e.g. ``"C6 H12 O6"``."""

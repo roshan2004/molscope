@@ -122,6 +122,7 @@ def descriptors(
     desc["principal_axes"] = principal_axes.reshape(-1).astype(float).tolist()
     desc["shape_anisotropy"] = shape_anisotropy(principal_moments)
     desc.update(shape_descriptors(principal_moments, float(np.sum(molecule.masses))))
+    desc.update(_cross_section_summary(molecule))
 
     hist = _pairwise_distance_histogram(
         coords,
@@ -205,6 +206,16 @@ def shape_descriptors(principal_moments, total_mass: float) -> dict:
         "acylindricity": float(c),
         "relative_shape_anisotropy": float(min(max(kappa2, 0.0), 1.0)),
     }
+
+
+def _cross_section_summary(molecule) -> dict[str, float]:
+    """Reduced cross-sectional area scalars along the long principal axis (Å²)."""
+    from .crosssection import DESCRIPTOR_SLICE_THICKNESS, cross_section_profile
+
+    profile = cross_section_profile(
+        molecule, axis="principal", thickness=DESCRIPTOR_SLICE_THICKNESS, method="hull"
+    )
+    return profile.summary()
 
 
 def _sasa_summary(molecule, n_points: int) -> dict[str, float]:
@@ -375,6 +386,10 @@ def _empty_descriptors(desc: dict, distance_bins: int) -> dict:
         "asphericity": 0.0,
         "acylindricity": 0.0,
         "relative_shape_anisotropy": 0.0,
+        "cross_section_max": 0.0,
+        "cross_section_mean": 0.0,
+        "cross_section_min": 0.0,
+        "cross_section_std": 0.0,
         "sasa_total": 0.0,
         "sasa_mean": 0.0,
         "sasa_std": 0.0,
@@ -578,6 +593,10 @@ def _preset_scalar_names(preset: str, elements_to_count, rdkit_prefix: str) -> l
             "asphericity",
             "acylindricity",
             "relative_shape_anisotropy",
+            "cross_section_max",
+            "cross_section_mean",
+            "cross_section_min",
+            "cross_section_std",
             "sasa_total",
             "sasa_mean",
             "sasa_std",

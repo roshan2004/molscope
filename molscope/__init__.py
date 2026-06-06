@@ -69,6 +69,7 @@ from .contacts import (
     pocket_descriptor_feature_names,
     select_pocket,
 )
+from .crosssection import CrossSectionProfile, cross_section_profile
 from .dataset import GraphDataset, TargetScaler, build_dataset, fetch_dataset
 from .descriptors import descriptor_feature_names, descriptors, featurize_many, inertia_tensor
 from .dssp import BackboneTorsions, SecondaryStructure, SSSegment, backbone_torsions
@@ -116,6 +117,7 @@ from .io import (
 from .molecule import Molecule, ResidueGroup, ResidueId, UnitCell
 from .plotting import (
     plot_cross_correlation,
+    plot_cross_section,
     plot_distance_matrix,
     plot_mapping,
     plot_ramachandran,
@@ -170,6 +172,8 @@ __all__ = [
     "contacts",
     "descriptor_feature_names",
     "descriptors",
+    "cross_section_profile",
+    "CrossSectionProfile",
     "sasa",
     "relative_sasa",
     "ResidueExposure",
@@ -189,6 +193,7 @@ __all__ = [
     "plot_rmsd_heatmap",
     "plot_distance_matrix",
     "plot_cross_correlation",
+    "plot_cross_section",
     "plot_ramachandran",
     "read",
     "read_cg_mapping",

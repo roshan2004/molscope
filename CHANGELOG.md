@@ -11,6 +11,23 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``mol.cross_section_profile(axis="principal", thickness=1.0, method="hull")``:
+  a cross-sectional area profile — slice the structure into thin bands
+  perpendicular to an axis and measure each band's area, the "how wide at each
+  point along its length" curve. Returns a ``CrossSectionProfile`` (full
+  ``positions``/``areas`` plus ``max``/``mean``/``min``/``std``/``length``), and
+  ``descriptors()`` (native-3d preset) gains the reduced scalars
+  ``cross_section_max``/``mean``/``min``/``std`` for ML tables. The slice axis
+  defaults to the long principal axis (rotation-invariant) and accepts
+  ``"x"``/``"y"``/``"z"`` or a 3-vector (use ``"z"`` for a membrane protein
+  oriented with its normal along z). ``method="hull"`` (pure NumPy, default) is
+  the convex-hull cross-section; ``method="voronoi"`` (needs SciPy) sums the
+  protein atoms' 2-D Voronoi cells bounded by surrounding ``hetero`` /
+  ``environment=`` atoms, and refuses (pointing back to ``hull``) when no
+  bounding atoms are present. ``ms.plot_cross_section(profile)`` draws the curve.
+  Adapts the per-slice method of ``Becksteinlab/Protein_Area`` (membrane-protein
+  MD) to single static structures. No new required dependency.
+
 - ``mol.select_pocket(ligand=..., cutoff=...).describe_environment()``: translate
   a 3D binding pocket into a chemistry-aware, biochemist-style natural-language
   paragraph for LLM / RAG prompt context. Pure-NumPy geometric heuristics detect

@@ -31,6 +31,7 @@ Included features:
 - principal moments and axes
 - shape anisotropy
 - asphericity, acylindricity, and relative shape anisotropy (κ²)
+- cross-sectional area summary (max, mean, min, std along the long axis)
 - compactness
 - distance histogram
 - bond length summary statistics
@@ -59,8 +60,8 @@ Preset options:
 - `native-basic`: counts, mass, size, compactness, bond summaries, and contact summaries.
 - `native-3d`: `native-basic` plus centres, inertia, principal axes/moments, the
   gyration-tensor shape descriptors (asphericity, acylindricity, relative shape
-  anisotropy κ²), SASA summary statistics, polar-contact and salt-bridge counts,
-  and distance histograms.
+  anisotropy κ²), the cross-sectional area summary, SASA summary statistics,
+  polar-contact and salt-bridge counts, and distance histograms.
 - `rdkit-basic`: `native-basic` plus a stable subset of RDKit scalar descriptors.
 
 The gyration-tensor shape descriptors in `native-3d` come from the eigenvalues
@@ -95,6 +96,47 @@ names = ms.pocket_descriptor_feature_names("pocket-basic")
 `pocket-basic` includes pocket atom and residue counts, amino-acid composition,
 protein-ligand contact counts, radius of gyration, bounding-box dimensions, and
 ligand-distance summaries.
+
+## Cross-sectional area profile
+
+`native-3d` also records how wide the structure is at each point along its
+length. `mol.cross_section_profile(...)` slices the structure into thin bands
+perpendicular to an axis and measures each band's area, returning a
+`CrossSectionProfile` (the full `positions`/`areas` curve plus `max`, `mean`,
+`min`, `std`, and `length`). The descriptor table keeps the four reduced scalars
+`cross_section_max`, `cross_section_mean`, `cross_section_min` (over occupied
+slices, so a tapering terminus does not force it to zero), and
+`cross_section_std`.
+
+```python
+profile = mol.cross_section_profile(axis="principal", thickness=1.0)
+ms.plot_cross_section(profile)          # area vs. position along the axis
+profile.summary()                       # the four reduced scalars
+```
+
+By default the slice axis is the **long principal axis** (the axis of smallest
+inertia), so the cross-sections are taken perpendicular to the structure's
+length and the profile is rotation-invariant. Pass `axis="x"|"y"|"z"` or a
+3-vector to slice along a fixed direction — use `axis="z"` for a membrane protein
+pre-oriented with its normal along z.
+
+Two area methods are available:
+
+- `method="hull"` (default, pure NumPy): the convex-hull area of the atoms in
+  each slice — the *outer* cross-section, defined for any structure with no extra
+  dependency.
+- `method="voronoi"` (needs SciPy): the sum of the protein atoms' 2-D Voronoi
+  cells, where surrounding `hetero` atoms (or an explicit `environment=` molecule)
+  bound the protein's outer cells. This measures the area the protein *occupies*
+  against its environment, and only differs from `hull` when such environment
+  atoms are present; with none it raises and points you back to `hull`.
+
+The method follows the per-slice cross-section idea of
+[`Becksteinlab/Protein_Area`](https://github.com/Becksteinlab/Protein_Area)
+(Voronoi-cell areas per membrane-normal slice of an MD trajectory), adapted to
+single static structures: the slice axis defaults to the principal axis instead
+of a hardcoded membrane normal, and the membrane-free `hull` method is the
+dependency-light default.
 
 ## Solvent-accessible surface area (SASA)
 

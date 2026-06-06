@@ -429,6 +429,26 @@ def plot_stream_analysis(analysis, axes=None, show: bool = True):
     return axes
 
 
+def plot_cross_section(profile, ax=None, show: bool = True, **plot_kwargs):
+    """Plot a cross-sectional area profile (area vs. position along the axis).
+
+    ``profile`` is a :class:`~molscope.crosssection.CrossSectionProfile` (e.g. from
+    ``mol.cross_section_profile()``). Extra keyword arguments are forwarded to
+    ``Axes.plot``. Returns the matplotlib ``Axes``.
+    """
+    import matplotlib.pyplot as plt
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5, 3.5))
+    ax.plot(profile.positions, profile.areas, **plot_kwargs)
+    ax.set_xlabel("position along axis (Å)")
+    ax.set_ylabel("cross-sectional area (Å$^2$)")
+    ax.set_title(f"cross-section profile ({profile.method})")
+    if show:
+        plt.show()
+    return ax
+
+
 def plot_distance_matrix(matrix, ax=None, cmap="magma_r", show: bool = True):
     """Draw a dense pairwise distance matrix heatmap."""
     import matplotlib.pyplot as plt

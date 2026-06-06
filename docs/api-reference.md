@@ -25,6 +25,7 @@ Graph-dataset assembly (the ML on-ramp):
 - `molscope.select_pocket(mol, ligand=None, cutoff=4.5)` (also `Molecule.select_pocket(...)`): returns a `Pocket` (a `BindingSite` bound to its molecule) whose `describe_environment()` renders a chemistry-aware natural-language paragraph for LLM / RAG prompts; `environment()`/`analyze_pocket(mol, site)` return the structured `PocketEnvironment`.
 - `molscope.backbone_torsions(mol)`: per-residue phi/psi/omega.
 - `molscope.sasa(mol, probe_radius=1.4, n_points=192, level="atom")`: approximate Shrake-Rupley solvent-accessible surface area (also `Molecule.sasa(...)`).
+- `molscope.cross_section_profile(mol, axis="principal", thickness=1.0, method="hull")` (also `Molecule.cross_section_profile(...)`): cross-sectional area profile along an axis, returning a `CrossSectionProfile`; `ms.plot_cross_section(profile)` draws area vs. position.
 
 Residue identity helpers:
 
@@ -50,7 +51,7 @@ Common methods:
 - `translate(...)`, `centered(...)`, `rotate(...)`, `superpose(...)`
 - `distance(...)`, `angle(...)`, `dihedral(...)`
 - `centroid`, `center_of_mass`, `radius_of_gyration`, `dimensions`
-- `inertia_tensor()`, `principal_moments()`, `principal_axes()`
+- `inertia_tensor()`, `principal_moments()`, `principal_axes()`, `cross_section_profile(...)`
 - `distance_matrix(backend="numpy")`, `contacts(...)`, `contact_count(...)`, `contact_map(...)`
 - `secondary_structure()`, `backbone_torsions()`, `interface(...)`, `chain_contacts(...)`, `ligands(...)`, `binding_site(...)`
 - `bonds(...)`, `bond_order_array(...)`
