@@ -42,6 +42,9 @@ Feature presets keep ML columns stable:
 - Edge `basic`: distance and bond order.
 - Edge `ml`: distance, bond order, aromatic flag.
 
+`ms.list_presets("graph")` (or `molscope presets graph --features`) prints these,
+the residue-graph presets, and the exact feature names each one expands to.
+
 Use optional RDKit-backed aromaticity when building the graph:
 
 ```python

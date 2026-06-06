@@ -11,6 +11,7 @@ import os
 import re
 import sys
 
+from .coarsegrain import COARSE_GRAIN_MAPPINGS
 from .io import fetch, read
 
 _SELECTION_KEYS = {
@@ -413,13 +414,31 @@ def main(argv=None) -> int:
     cg_src.add_argument("file", nargs="?", help="path to a structure file")
     cg_src.add_argument("--fetch", metavar="PDBID", help="download from RCSB by id")
     cg_parser.add_argument(
-        "--mapping", choices=["residue_com", "residue_centroid", "martini"],
+        "--mapping", choices=list(COARSE_GRAIN_MAPPINGS),
         default="residue_com", help="bead mapping (default: residue_com)",
     )
     cg_parser.add_argument(
         "--out", "-o", metavar="PATH",
         help="write the bead model to PATH (.pdb/.cif/.xyz; format by extension)",
     )
+
+    # -- PRESETS subcommand ------------------------------------------------
+    from .presets import CATEGORIES
+
+    presets_parser = subparsers.add_parser(
+        "presets",
+        help="list the available feature/mapping presets (descriptors, graph, "
+        "coarse-grain) and what each one produces",
+    )
+    presets_parser.add_argument(
+        "category", nargs="?", choices=list(CATEGORIES),
+        help="show only one category (default: all)",
+    )
+    presets_parser.add_argument(
+        "--features", action="store_true",
+        help="also print the full feature-name list each preset expands to",
+    )
+    presets_parser.add_argument("--json", action="store_true", help="print the full JSON catalogue")
 
     # Default to 'view' if no subcommand provided
     if argv is None:
@@ -452,6 +471,8 @@ def main(argv=None) -> int:
         return _run_structure_report(args)
     if args.command == "qc":
         return _run_qc(args)
+    if args.command == "presets":
+        return _run_presets(args)
     if args.command == "coarse-grain":
         return _run_coarse_grain(args)
 
@@ -674,6 +695,19 @@ def _run_qc(args: argparse.Namespace) -> int:
             print(f"could not write {args.out}: {exc}", file=sys.stderr)
             return 2
         print(f"wrote {args.out}")
+    return 0
+
+
+def _run_presets(args: argparse.Namespace) -> int:
+    from .presets import format_presets, list_presets
+
+    presets = list_presets(args.category)
+    if args.json:
+        import json
+
+        print(json.dumps([p.to_dict() for p in presets], indent=2))
+    else:
+        print(format_presets(presets, show_features=args.features))
     return 0
 
 
