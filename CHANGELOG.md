@@ -11,6 +11,21 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``molscope qc`` / ``ms.quality_report(source)``: a lightweight, format-agnostic
+  structure-quality report to run *before* analysis. Reads a ``.pdb`` / ``.cif`` /
+  ``.xyz`` / ``.sdf`` file (or an in-memory ``Molecule``) once and inventories
+  what is in it and whether it parsed cleanly — atom / chain / residue counts,
+  the ligand / water / ion split, which per-atom metadata the format carried,
+  blank or non-element atom symbols, whether bonds are explicit (from the file)
+  or geometry-inferred, alternate-location / partial-occupancy atoms (PDB), and
+  mmCIF validity warnings (when gemmi is available, degrading to a note when not).
+  Returns a ``QualityReport`` with ``.summary()``, ``.to_dict()`` (JSON), and
+  ``.report_markdown()``; the CLI mirrors ``structure-report`` with ``--json``
+  and ``--out``. This is the upstream, parse-fidelity complement to
+  ``prepare_structure`` (which answers the heavier "is this protein ML-ready?").
+  Adds the full IUPAC element table as ``elements.ELEMENT_SYMBOLS`` /
+  ``elements.is_element`` to tell real symbols from parse junk.
+
 - ``mol.select_pocket(ligand=..., cutoff=...).describe_environment()``: translate
   a 3D binding pocket into a chemistry-aware, biochemist-style natural-language
   paragraph for LLM / RAG prompt context. Pure-NumPy geometric heuristics detect

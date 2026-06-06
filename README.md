@@ -126,6 +126,7 @@ runnable tour over the bundled samples lives in [`examples/tour.py`](examples/to
 | Command | Does |
 | --- | --- |
 | `molscope <file>` (view) | visualise a structure, save a PNG or GIF |
+| `molscope qc` | lightweight structure-quality report (atoms, chains, ligands, metadata, elements, bonds, altLoc, CIF/PDB warnings) |
 | `molscope analyze` | batch descriptor table to CSV |
 | `molscope binding-site` | ligand binding-site contacts and pocket descriptors |
 | `molscope export` | batch graph export to PyG / DGL / NetworkX |
@@ -138,6 +139,7 @@ runnable tour over the bundled samples lives in [`examples/tour.py`](examples/to
 
 ```bash
 molscope examples/data/1fqy.pdb --select atom_name=CA --color-by residue --save ca.png
+molscope qc examples/data/3ptb.pdb
 molscope analyze examples/data/*.pdb --out results.csv --preset native-3d --jobs 4
 molscope export "data/*.cif" --to pyg --out-dir pyg_graphs/ --pe laplacian --jobs 8
 molscope coarse-grain examples/data/1fqy.pdb --mapping martini --out cg.pdb

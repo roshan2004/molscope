@@ -61,4 +61,52 @@ molscope structure-report model.pdb --protonation pka --ph 7.4
 (`.pdb.gz`, as RCSB serves them) are handled transparently, including for the
 net-charge step.
 
+## A faster, format-agnostic check: `quality_report`
+
+`prepare_structure` is protein-shaped: it reasons about backbones, chain breaks,
+and protonation. Sometimes you want a cheaper, upstream question answered first:
+*did this file parse into something sensible at all?* — and you want it to work on
+an `.xyz` or `.sdf` small molecule just as well as on a protein. That is
+[`quality_report`][quality] (`molscope qc`).
+
+```python
+import molscope as ms
+
+report = ms.quality_report("3ptb.pdb")     # a path, a PDB id, or a Molecule
+print(report.summary())
+# 3ptb.pdb: clean | 1701 atoms | chains A | 1 ligand(s) | bonds explicit (21)
+```
+
+It reads the structure once and reports an inventory plus a few parse-fidelity
+signals:
+
+| Field | What it tells you |
+| --- | --- |
+| `n_atoms`, `chains`, `n_residues` | basic size of what was parsed |
+| `ligands`, `n_waters`, `n_ions`, `n_hetero_atoms` | the HETATM split |
+| `missing_metadata` | per-atom fields the format did **not** carry (e.g. an XYZ has no chains or residue names) |
+| `unknown_elements`, `blank_elements` | atom symbols that are not real elements, or empty — usually a sign of a misread column |
+| `bond_source`, `n_bonds` | whether connectivity is **explicit** (from the file, e.g. SDF bonds or PDB `CONECT`) or **inferred** from geometry |
+| `altloc_atoms`, `low_occupancy_atoms` | alternate conformations / partial occupancies (PDB) |
+| `warnings` | mmCIF validity problems (needs the `cif` extra; degrades to a note without it) |
+
+`report.clean` is `True` when nothing in `report.issues` fired (no atoms lost, no
+junk element symbols, no CIF validity failure). Like the report above, it offers
+`to_dict()` (JSON) and `report_markdown()`, and the CLI mirrors the same flags:
+
+```bash
+molscope qc 3ptb.pdb                 # one-line inventory
+molscope qc --fetch 1ubq --json      # full JSON report
+molscope qc ligand.sdf --out qc.md   # write a Markdown report
+```
+
+!!! tip "Which one do I want?"
+    Reach for `molscope qc` as a quick gate on *any* structure file — it is fast,
+    needs only NumPy, and surfaces parse problems (lost atoms, bad element
+    columns, missing metadata, surprise inference of bonds). Reach for
+    `molscope structure-report` when the structure is a protein headed for
+    distance- or graph-based ML and you need the topology verdict (backbone
+    integrity, chain breaks, net charge).
+
 [report]: ../api-reference.md
+[quality]: ../api-reference.md

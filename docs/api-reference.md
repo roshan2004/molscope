@@ -7,6 +7,7 @@
 - `molscope.read_pdb(path)`, `read_pdb_models(path)`, `read_xyz(path)`, `read_xyz_frames(path)`, `read_cif(path)`, `read_sdf(path)`, `read_sdf_frames(path)`.
 - `molscope.read_sdf_frames(path)`: read every record of a multi-record SDF as a list of molecules (one per docking pose), keeping each pose's 3D coordinates and exposing its `> <tag>` data fields (e.g. Vina/Gnina scores) via `Molecule.properties`.
 - `molscope.validate_cif(path)`: optional Gemmi-backed CIF/mmCIF validation.
+- `molscope.quality_report(source)`: lightweight, format-agnostic structure-quality report (atoms, chains, ligand/water/ion inventory, missing per-atom metadata, blank/unknown element symbols, explicit vs inferred bonds, altLoc/occupancy, CIF/PDB warnings). Returns a `QualityReport` with `.summary()`, `.to_dict()`, `.report_markdown()`. CLI: `molscope qc`.
 - `molscope.write_pdb(molecule, path)`, `write_xyz(molecule, path)`, `write_sdf`, `write_cif`.
 - `molscope.write_frames(frames, path)`: write a list/generator of molecules as a multi-frame `.pdb`/`.xyz`/`.sdf` file (streaming, O(1) memory).
 - `molscope.featurize_many(paths, return_names=False)`: build an ML feature matrix.

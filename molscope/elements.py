@@ -106,3 +106,36 @@ ATOMIC_NUMBERS = {
 def atomic_number(element: str) -> int:
     """Atomic number (Z) for an element symbol (case-insensitive); 0 if unknown."""
     return ATOMIC_NUMBERS.get(element.upper(), 0)
+
+
+# Every IUPAC element symbol (Z 1-118), upper-cased. Unlike ``ATOMIC_NUMBERS``
+# (which only carries reference data for the light elements MolScope models),
+# this is the full periodic table, used purely to tell a real element symbol
+# apart from parse junk in quality checks. ``"D"``/``"T"`` (deuterium/tritium)
+# are accepted as hydrogen isotopes that show up in real structure files.
+ELEMENT_SYMBOLS = frozenset(
+    {
+        "H", "HE", "LI", "BE", "B", "C", "N", "O", "F", "NE",
+        "NA", "MG", "AL", "SI", "P", "S", "CL", "AR", "K", "CA",
+        "SC", "TI", "V", "CR", "MN", "FE", "CO", "NI", "CU", "ZN",
+        "GA", "GE", "AS", "SE", "BR", "KR", "RB", "SR", "Y", "ZR",
+        "NB", "MO", "TC", "RU", "RH", "PD", "AG", "CD", "IN", "SN",
+        "SB", "TE", "I", "XE", "CS", "BA", "LA", "CE", "PR", "ND",
+        "PM", "SM", "EU", "GD", "TB", "DY", "HO", "ER", "TM", "YB",
+        "LU", "HF", "TA", "W", "RE", "OS", "IR", "PT", "AU", "HG",
+        "TL", "PB", "BI", "PO", "AT", "RN", "FR", "RA", "AC", "TH",
+        "PA", "U", "NP", "PU", "AM", "CM", "BK", "CF", "ES", "FM",
+        "MD", "NO", "LR", "RF", "DB", "SG", "BH", "HS", "MT", "DS",
+        "RG", "CN", "NH", "FL", "MC", "LV", "TS", "OG",
+    }
+    | {"D", "T"}
+)
+
+
+def is_element(symbol: str) -> bool:
+    """True if ``symbol`` is a real IUPAC element (case-insensitive).
+
+    Deuterium (``D``) and tritium (``T``) count as elements. A blank or
+    ``None`` symbol is not an element. Used to flag parse junk in QC.
+    """
+    return bool(symbol) and symbol.strip().upper() in ELEMENT_SYMBOLS
