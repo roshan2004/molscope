@@ -19,6 +19,26 @@ X, names = ms.featurize_many(
 )
 ```
 
+### Standardising features without leaking
+
+Most classical models want zero-mean, unit-variance features, and the column
+statistics must be fit on the **training rows only** — fitting on the whole
+matrix leaks the validation/test distribution into training. `standardize_features`
+does this in one call:
+
+```python
+X, names = ms.featurize_many(paths, preset="native-3d", return_names=True)
+# train_index: any iterable of row indices (a SplitResult.train, sklearn
+# indices, or a hand-built list)
+X_std, scaler = ms.standardize_features(X, train_index)
+# scaler.transform(new_X) for fresh data; scaler.inverse_transform(...) to undo
+```
+
+It returns a `FeatureScaler` (per-column `mean`/`std`); near-constant columns get
+`std = 1` so a differing test row cannot blow up. This is the feature-matrix
+companion to [`GraphDataset.standardize_targets`](molecular-graphs.md), which does
+the same train-only fit for graph *labels*.
+
 Included features:
 
 - atom and residue counts

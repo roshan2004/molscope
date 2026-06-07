@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -322,6 +323,72 @@ def featurize_many(
         names = sorted({key for row in rows for key in row})
     matrix = np.array([[row.get(name, 0.0) for name in names] for row in rows], dtype=float)
     return (matrix, names) if return_names else matrix
+
+
+@dataclass
+class FeatureScaler:
+    """Per-column affine standardiser for a descriptor matrix.
+
+    The feature-side companion to :class:`~molscope.TargetScaler`: where that
+    standardises a graph dataset's *labels*, this standardises a
+    :func:`featurize_many` *feature matrix*. ``transform`` maps a matrix into
+    zero-mean, unit-variance-per-column space and ``inverse_transform`` maps it
+    back. Fit it on the train rows only (see :func:`standardize_features`) so
+    validation/test statistics never leak into training.
+
+    ``mean`` and ``std`` are per-column arrays. Near-constant columns (training
+    std below ``1e-8``) are given ``std = 1`` so they pass through as a plain
+    mean shift instead of exploding a test row that happens to differ.
+    """
+
+    mean: np.ndarray
+    std: np.ndarray
+
+    @classmethod
+    def fit(cls, X) -> FeatureScaler:
+        """Fit column means and standard deviations on the rows of ``X``."""
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2:
+            raise ValueError(f"expected a 2-D feature matrix, got shape {X.shape}")
+        if len(X) == 0:
+            raise ValueError("cannot fit a scaler on an empty matrix")
+        std = X.std(axis=0)
+        std = np.where(std < 1e-8, 1.0, std)
+        return cls(mean=X.mean(axis=0), std=std)
+
+    def transform(self, X):
+        """Standardise ``X`` with the fitted statistics."""
+        return (np.asarray(X, dtype=float) - self.mean) / self.std
+
+    def inverse_transform(self, X):
+        """Map standardised values back to original units."""
+        return np.asarray(X, dtype=float) * self.std + self.mean
+
+
+def standardize_features(X, train_index):
+    """Standardise a feature matrix using train-split statistics only.
+
+    Fits a :class:`FeatureScaler` on ``X[train_index]`` and returns
+    ``(X_standardised, scaler)`` with **every** row transformed. The train-only
+    fit is the point: computing column means/standard deviations over the whole
+    matrix leaks the validation/test feature distribution into training, the
+    same mistake :meth:`~molscope.GraphDataset.standardize_targets` avoids on the
+    label side.
+
+    ``train_index`` is any iterable of integer row indices -- a
+    :class:`~molscope.prepare.SplitResult`'s ``.train``, scikit-learn split
+    indices, or a hand-built list. Map a model's predictions or a fitted scaler
+    back to physical units with ``scaler.inverse_transform(...)``.
+
+    >>> X, names = ms.featurize_many(paths, preset="native-3d", return_names=True)
+    >>> X_std, scaler = ms.standardize_features(X, split.train)
+    """
+    X = np.asarray(X, dtype=float)
+    train_index = list(train_index)
+    if not train_index:
+        raise ValueError("train_index is empty; need at least one train row to fit")
+    scaler = FeatureScaler.fit(X[train_index])
+    return scaler.transform(X), scaler
 
 
 def descriptor_feature_names(
