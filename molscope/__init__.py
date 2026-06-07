@@ -70,7 +70,14 @@ from .contacts import (
     select_pocket,
 )
 from .dataset import GraphDataset, TargetScaler, build_dataset, fetch_dataset
-from .descriptors import descriptor_feature_names, descriptors, featurize_many, inertia_tensor
+from .descriptors import (
+    FeatureScaler,
+    descriptor_feature_names,
+    descriptors,
+    featurize_many,
+    inertia_tensor,
+    standardize_features,
+)
 from .dssp import BackboneTorsions, SecondaryStructure, SSSegment, backbone_torsions
 from .ensemble import (
     Clustering,
@@ -143,6 +150,8 @@ __all__ = [
     "DroppedAtom",
     "GraphDataset",
     "TargetScaler",
+    "FeatureScaler",
+    "standardize_features",
     "build_dataset",
     "fetch_dataset",
     "Interface",

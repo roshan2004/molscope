@@ -11,6 +11,7 @@
 - `molscope.write_pdb(molecule, path)`, `write_xyz(molecule, path)`, `write_sdf`, `write_cif`.
 - `molscope.write_frames(frames, path)`: write a list/generator of molecules as a multi-frame `.pdb`/`.xyz`/`.sdf` file (streaming, O(1) memory).
 - `molscope.featurize_many(paths, return_names=False)`: build an ML feature matrix.
+- `molscope.standardize_features(X, train_index)`: fit a per-column `FeatureScaler` on the train rows only and return `(X_standardised, scaler)`, transforming every row without leaking val/test statistics into training. The feature-matrix companion to `GraphDataset.standardize_targets`; `scaler.inverse_transform(...)` maps back to original units.
 - `molscope.list_presets(category=None)`: discover every descriptor / graph / coarse-grain preset as a list of `PresetInfo` (name, description, `used_by`, and the `feature_names` it expands to). `category` is one of `"descriptors"`, `"graph"`, `"coarse-grain"`. CLI: `molscope presets [category] [--features] [--json]`.
 - `molscope.descriptor_feature_names(preset)`: stable flattened descriptor columns.
 - `molscope.pocket_descriptor_feature_names("pocket-basic")`: stable binding-pocket descriptor columns.

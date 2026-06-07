@@ -11,6 +11,17 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- ``ms.standardize_features(X, train_index)`` / ``ms.FeatureScaler``: train-only
+  standardisation for a :func:`featurize_many` descriptor matrix, the feature-side
+  companion to ``TargetScaler`` (which only covered labels). Fits per-column mean
+  and standard deviation on the train rows alone and transforms every row, so the
+  validation/test feature distribution never leaks into training — the same
+  correctness detail ``GraphDataset.standardize_targets`` enforces on the label
+  side, previously left to the user on the feature side. ``train_index`` is any
+  iterable of row indices (a ``SplitResult.train``, scikit-learn indices, or a
+  hand-built list). Near-constant columns get ``std = 1`` so a differing test row
+  cannot blow up; ``FeatureScaler.inverse_transform`` maps values back to units.
+
 - ``molscope presets`` / ``ms.list_presets(category=None)``: a discoverable
   catalogue of every feature and mapping preset (descriptor, graph node/edge,
   residue-graph node/edge, and coarse-grain bead mappings). Each entry carries a
