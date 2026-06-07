@@ -9,6 +9,8 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-06-07
+
 ### Added
 
 - ``ms.standardize_features(X, train_index)`` / ``ms.FeatureScaler``: train-only
@@ -692,7 +694,8 @@ Initial public release under the **MolScope** name, renamed from the earlier
 - `uv` support (lockfile, dev dependency group, `.python-version`), continuous
   integration, and README visual examples.
 
-[Unreleased]: https://github.com/roshan2004/molscope/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/roshan2004/molscope/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/roshan2004/molscope/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/roshan2004/molscope/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/roshan2004/molscope/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/roshan2004/molscope/compare/v0.11.0...v0.12.0
