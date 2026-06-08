@@ -2,6 +2,7 @@
 
 import glob
 import os
+import warnings
 
 import numpy as np
 import pytest
@@ -30,12 +31,21 @@ def test_inverse_transform_round_trips():
 
 def test_constant_column_does_not_blow_up():
     X = np.column_stack([np.arange(10.0), np.full(10, 7.0)])  # 2nd col constant
-    scaler = FeatureScaler.fit(X)
+    with pytest.warns(UserWarning, match=r"near-constant column.*\[1\]"):
+        scaler = FeatureScaler.fit(X)
     assert scaler.std[1] == 1.0  # near-constant column gets unit std
     # A *test* row whose constant-on-train column differs stays finite/sane.
     out = scaler.transform([[3.0, 12.0]])
     assert np.all(np.isfinite(out))
     assert out[0, 1] == pytest.approx(5.0)  # (12 - 7) / 1
+
+
+def test_fit_does_not_warn_when_every_column_varies():
+    rng = np.random.RandomState(7)
+    X = rng.normal(0.0, 1.0, size=(20, 4))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning would fail the test
+        FeatureScaler.fit(X)
 
 
 def test_per_column_statistics_have_feature_width():
@@ -84,6 +94,27 @@ def test_standardize_features_accepts_numpy_index_array():
 def test_empty_train_index_raises():
     with pytest.raises(ValueError, match="train_index is empty"):
         standardize_features(np.ones((4, 2)), [])
+
+
+def test_transform_rejects_column_count_mismatch():
+    # A wider scaler against a single-column matrix would silently broadcast
+    # without a width guard; both directions must raise instead.
+    scaler = FeatureScaler.fit(np.arange(15.0).reshape(5, 3))
+    with pytest.raises(ValueError, match="columns but the scaler was fit"):
+        scaler.transform(np.ones((4, 1)))
+    with pytest.raises(ValueError, match="columns but the scaler was fit"):
+        scaler.inverse_transform(np.ones((4, 5)))
+
+
+def test_standardize_features_rejects_negative_index():
+    # A stray negative index would otherwise wrap to a held-out row and leak.
+    with pytest.raises(ValueError, match="out-of-range rows"):
+        standardize_features(np.arange(20.0).reshape(10, 2), [0, 1, -1])
+
+
+def test_standardize_features_rejects_out_of_bounds_index():
+    with pytest.raises(ValueError, match="out-of-range rows"):
+        standardize_features(np.arange(20.0).reshape(10, 2), [0, 1, 99])
 
 
 def test_fit_rejects_non_2d_matrix():

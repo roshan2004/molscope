@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from dataclasses import dataclass
 from typing import Optional
@@ -353,16 +354,46 @@ class FeatureScaler:
         if len(X) == 0:
             raise ValueError("cannot fit a scaler on an empty matrix")
         std = X.std(axis=0)
-        std = np.where(std < 1e-8, 1.0, std)
+        constant = std < 1e-8
+        if constant.any():
+            cols = np.flatnonzero(constant).tolist()
+            shown = cols[:10]
+            more = "" if len(cols) <= 10 else f" (+{len(cols) - 10} more)"
+            warnings.warn(
+                f"{len(cols)} near-constant column(s) {shown}{more} have "
+                "~zero variance on the fitted rows; their std is set to 1 so "
+                "they pass through as a plain mean shift. Consider dropping "
+                "them -- a constant feature carries no signal.",
+                stacklevel=2,
+            )
+        std = np.where(constant, 1.0, std)
         return cls(mean=X.mean(axis=0), std=std)
 
     def transform(self, X):
         """Standardise ``X`` with the fitted statistics."""
-        return (np.asarray(X, dtype=float) - self.mean) / self.std
+        X = np.asarray(X, dtype=float)
+        self._check_width(X)
+        return (X - self.mean) / self.std
 
     def inverse_transform(self, X):
         """Map standardised values back to original units."""
-        return np.asarray(X, dtype=float) * self.std + self.mean
+        X = np.asarray(X, dtype=float)
+        self._check_width(X)
+        return X * self.std + self.mean
+
+    def _check_width(self, X):
+        """Reject a matrix whose column count does not match the fit.
+
+        NumPy broadcasting masks the mismatch in the single-column case --
+        a (n, 1) matrix against a wider scaler (or vice versa) would silently
+        broadcast to a wrong-shaped result rather than erroring -- so guard it.
+        """
+        width = X.shape[-1] if X.ndim else 0
+        if width != len(self.mean):
+            raise ValueError(
+                f"feature matrix has {width} columns but the scaler was fit on "
+                f"{len(self.mean)}"
+            )
 
 
 def standardize_features(X, train_index):
@@ -387,6 +418,14 @@ def standardize_features(X, train_index):
     train_index = list(train_index)
     if not train_index:
         raise ValueError("train_index is empty; need at least one train row to fit")
+    n = len(X)
+    bad = [i for i in train_index if i < 0 or i >= n]
+    if bad:
+        raise ValueError(
+            f"train_index has out-of-range rows {bad[:5]} for a matrix with {n} "
+            "rows; indices must be in [0, n_rows). Negative indices are rejected "
+            "because they would silently pull held-out rows into the fit."
+        )
     scaler = FeatureScaler.fit(X[train_index])
     return scaler.transform(X), scaler
 
