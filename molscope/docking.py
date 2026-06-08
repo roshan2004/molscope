@@ -340,11 +340,15 @@ class DiverseResult:
     score_field: str
     capped_below_request: bool       # True when fewer clusters than requested
     n_failed_fp: int = 0             # Number of poses where fingerprint perception failed
+    direction_assumed: bool = False  # True when the score direction was guessed, not known
+
+
 def select_diverse_hits(
     poses: Iterable[Pose],
     score_field: str,
     *,
     higher_is_better_flag: bool,
+    direction_assumed: bool = False,
     top: int = 500,
     select: int = 50,
     threshold: float = 0.7,
@@ -448,6 +452,7 @@ def select_diverse_hits(
         threshold=threshold, score_field=score_field,
         capped_below_request=n_clusters < select,
         n_failed_fp=n_failed_fp,
+        direction_assumed=direction_assumed,
     )
 
 

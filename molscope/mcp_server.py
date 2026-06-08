@@ -986,12 +986,12 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
 
         poses = docking.PoseStream(_dock_path(source))
         field = docking.resolve_score_field(poses, score_field)
-        higher = (
-            docking.higher_is_better(field)[0]
-            if higher_is_better is None else higher_is_better
+        higher, assumed = (
+            docking.higher_is_better(field) if higher_is_better is None
+            else (higher_is_better, False)
         )
         result = docking.select_diverse_hits(
-            poses, field, higher_is_better_flag=higher,
+            poses, field, higher_is_better_flag=higher, direction_assumed=assumed,
             top=top, select=select, threshold=threshold,
         )
         columns = ["rank", "pose_id", "name", "smiles", "score",
@@ -999,6 +999,8 @@ def build_server():  # noqa: C901 - a flat list of small tool adapters reads cle
         rows = [{k: rep[k] for k in columns} for rep in result.selected]
         payload = {
             "score_field": field,
+            "direction": "higher_is_better" if higher else "lower_is_better",
+            "direction_assumed": result.direction_assumed,
             "n_pool": result.n_pool,
             "n_clusters": result.n_clusters,
             "requested": result.requested,

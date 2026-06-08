@@ -667,6 +667,9 @@ def test_dock_diverse_selects_representatives(server, tmp_path):
     assert len(out["selected"]) == 3
     assert out["selected"][0]["name"] == "aspirin"        # best score leads
     assert {"cluster_id", "cluster_size"} <= set(out["selected"][0])
+    # A known score field reports its direction without flagging an assumption.
+    assert out["direction"] == "lower_is_better"
+    assert out["direction_assumed"] is False
     assert (tmp_path / "out" / "diverse_hits.sdf").exists()
 
 
