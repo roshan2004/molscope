@@ -26,6 +26,7 @@ import csv
 import glob
 import hashlib
 import os
+import warnings
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -73,6 +74,22 @@ class GraphDataset:
     split: Optional[object] = None  # prepare.SplitResult, or None
     skipped: list[tuple[str, str]] = field(default_factory=list)
     feature_names: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        # graphs, ids and labels are positionally aligned -- a saved manifest
+        # can drift (hand-edited, or a graph file deleted), and downstream code
+        # such as standardize_targets indexes labels by graph position, so a
+        # length skew would silently pair the wrong label with the wrong graph.
+        if len(self.ids) != len(self.graphs):
+            raise ValueError(
+                f"ids and graphs are misaligned: {len(self.ids)} ids vs "
+                f"{len(self.graphs)} graphs"
+            )
+        if self.labels is not None and len(self.labels) != len(self.graphs):
+            raise ValueError(
+                f"labels and graphs are misaligned: {len(self.labels)} labels "
+                f"vs {len(self.graphs)} graphs"
+            )
 
     def __len__(self) -> int:
         return len(self.graphs)
@@ -195,7 +212,15 @@ class GraphDataset:
             raise ValueError("no labelled graphs in the train split to fit on")
 
         mean = float(np.mean(train_values))
-        std = max(float(np.std(train_values)), 1e-8)
+        raw_std = float(np.std(train_values))
+        if raw_std < 1e-8:
+            warnings.warn(
+                "train-split targets have ~zero variance; std is clamped to "
+                "1e-8 to avoid dividing by zero. Standardised targets will be "
+                "near-constant -- check that the labels are not all identical.",
+                stacklevel=2,
+            )
+        std = max(raw_std, 1e-8)
         scaler = TargetScaler(mean=mean, std=std)
 
         for graph in self.graphs:

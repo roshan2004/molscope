@@ -177,6 +177,39 @@ def test_dataset_summary():
     assert "skipped" not in summary_empty
 
 
+def test_misaligned_ids_and_graphs_rejected():
+    from molscope.dataset import GraphDataset
+
+    with pytest.raises(ValueError, match="ids and graphs are misaligned"):
+        GraphDataset(graphs=[None, None], ids=["only_one"], fmt="raw")
+
+
+def test_misaligned_labels_rejected():
+    from molscope.dataset import GraphDataset
+
+    with pytest.raises(ValueError, match="labels and graphs are misaligned"):
+        GraphDataset(graphs=[None, None], ids=["a", "b"], fmt="raw", labels=[1.0])
+
+
+def test_load_rejects_corrupt_manifest(tmp_path):
+    import json
+
+    from molscope.dataset import GraphDataset
+
+    ds = GraphDataset(graphs=[None, None], ids=["a", "b"], fmt="raw", labels=[1.0, 2.0])
+    ds.save(str(tmp_path))
+    manifest_path = os.path.join(str(tmp_path), "manifest.json")
+    with open(manifest_path) as fh:
+        manifest = json.load(fh)
+    # Drop an id (e.g. a hand-edit) while the graph files remain.
+    manifest["ids"] = manifest["ids"][:1]
+    with open(manifest_path, "w") as fh:
+        json.dump(manifest, fh)
+
+    with pytest.raises(ValueError, match="ids and graphs are misaligned"):
+        GraphDataset.load(str(tmp_path))
+
+
 def test_invalid_on_error():
     with pytest.raises(ValueError, match="on_error must be"):
         build_dataset(PDBS, fmt="raw", on_error="invalid")
@@ -707,6 +740,20 @@ def test_standardize_targets_pyg_fits_on_train():
         assert abs(float(scaler.inverse_transform(graph.y)) - original) < 1e-4
     # ds.labels is left in original units.
     assert ds.labels == originals
+
+
+def test_standardize_targets_warns_on_constant_targets():
+    pytest.importorskip("torch")
+    pytest.importorskip("torch_geometric")
+    ds = build_dataset(
+        PDBS,
+        fmt="pyg",
+        labels={"1fqy": 4.0, "3ptb": 4.0, "1aml": 4.0},  # all identical
+        split=(0.34, 0.33, 0.33),
+        seed=0,
+    )
+    with pytest.warns(UserWarning, match="zero variance"):
+        ds.standardize_targets()
 
 
 # --- fetch_dataset (RCSB accession adapter) -------------------------------
