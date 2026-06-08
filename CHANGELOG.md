@@ -9,6 +9,18 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** the ``native-3d`` descriptor preset no longer emits the six
+  absolute-coordinate columns ``centroid_x/y/z`` and ``center_of_mass_x/y/z``
+  (preset width drops from 80 to 74). These recorded where a structure happened
+  to sit in its input file's coordinate frame, so they were translation- and
+  rotation-variant: two identical molecules placed differently produced different
+  features, letting a model learn the arbitrary input frame. Size and shape are
+  already captured frame-independently by ``radius_of_gyration``, ``dim_x/y/z``,
+  ``principal_moments`` and the gyration-tensor shape scalars. The ``native-basic``
+  and ``rdkit-basic`` presets are unaffected.
+
 ## [0.15.0] - 2026-06-07
 
 ### Added
