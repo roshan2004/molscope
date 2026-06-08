@@ -108,6 +108,20 @@ def test_native_3d_preset_includes_shape_descriptors():
     assert "asphericity" not in water().descriptors(preset="native-basic")
 
 
+def test_native_3d_omits_pose_variant_absolute_coordinates():
+    # Absolute centroid / centre-of-mass coordinates are translation- and
+    # rotation-variant, so they were dropped from the ML feature table.
+    desc = water().descriptors(preset="native-3d")
+    abs_cols = {
+        "centroid_x", "centroid_y", "centroid_z",
+        "center_of_mass_x", "center_of_mass_y", "center_of_mass_z",
+    }
+    assert abs_cols.isdisjoint(desc)
+    assert abs_cols.isdisjoint(descriptor_feature_names("native-3d"))
+    # The default (preset=None) output drops them too, not just the named preset.
+    assert abs_cols.isdisjoint(water().descriptors())
+
+
 def test_flatten_descriptors_expands_vector_features():
     flat = flatten_descriptors({"n_atoms": 3.0, "principal_moments": [1.0, 2.0, 3.0]})
     assert flat == {

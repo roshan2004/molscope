@@ -97,15 +97,7 @@ def descriptors(
         return _apply_preset(desc, preset, elements_to_count, distance_bins, rdkit_prefix)
 
     dims = molecule.dimensions
-    centroid = molecule.centroid
-    center_of_mass = molecule.center_of_mass
     desc.update({
-        "centroid_x": float(centroid[0]),
-        "centroid_y": float(centroid[1]),
-        "centroid_z": float(centroid[2]),
-        "center_of_mass_x": float(center_of_mass[0]),
-        "center_of_mass_y": float(center_of_mass[1]),
-        "center_of_mass_z": float(center_of_mass[2]),
         "radius_of_gyration": molecule.radius_of_gyration,
         "dim_x": float(dims[0]),
         "dim_y": float(dims[1]),
@@ -462,12 +454,6 @@ def flatten_descriptors(desc: dict) -> dict[str, float]:
 
 def _empty_descriptors(desc: dict, distance_bins: int) -> dict:
     desc.update({
-        "centroid_x": 0.0,
-        "centroid_y": 0.0,
-        "centroid_z": 0.0,
-        "center_of_mass_x": 0.0,
-        "center_of_mass_y": 0.0,
-        "center_of_mass_z": 0.0,
         "radius_of_gyration": 0.0,
         "dim_x": 0.0,
         "dim_y": 0.0,
@@ -674,12 +660,6 @@ def _preset_scalar_names(preset: str, elements_to_count, rdkit_prefix: str) -> l
     ]
     if preset == "native-3d":
         names += [
-            "centroid_x",
-            "centroid_y",
-            "centroid_z",
-            "center_of_mass_x",
-            "center_of_mass_y",
-            "center_of_mass_z",
             "shape_anisotropy",
             "asphericity",
             "acylindricity",
