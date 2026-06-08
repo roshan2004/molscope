@@ -1084,12 +1084,14 @@ def _run_dock_diverse(args: argparse.Namespace) -> int:
         print(f"dock-diverse failed: {exc}", file=sys.stderr)
         return 2
 
-    higher = (
-        docking.higher_is_better(score_field)[0] if args.higher is None else args.higher
-    )
+    if args.higher is None:
+        higher, assumed_dir = docking.higher_is_better(score_field)
+    else:
+        higher, assumed_dir = args.higher, False
     try:
         result = docking.select_diverse_hits(
             poses, score_field, higher_is_better_flag=higher,
+            direction_assumed=assumed_dir,
             top=args.top, select=args.select, threshold=args.threshold,
         )
     except ImportError as exc:
@@ -1106,6 +1108,12 @@ def _run_dock_diverse(args: argparse.Namespace) -> int:
     _write_csv_rows(csv_path, columns, [s for s in result.selected])
     docking.write_poses_sdf([s["pose"] for s in result.selected], sdf_path)
 
+    direction = "higher-is-better" if higher else "lower-is-better"
+    if result.direction_assumed:
+        print(
+            f"ranked by {score_field!r} ({direction}, assumed; "
+            "pass --higher/--lower-is-better)"
+        )
     print(
         f"clustered {result.n_pool} hits into {result.n_clusters} cluster(s) "
         f"at Tanimoto similarity {result.threshold:g}"

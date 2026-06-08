@@ -191,6 +191,36 @@ def test_select_diverse_writes_sdf_and_csv_via_cli(tmp_path):
     assert (out / "diverse_hits.sdf").exists()
 
 
+def test_select_diverse_carries_direction_assumed(tmp_path):
+    pytest.importorskip("rdkit")
+    sdf = _write_ligand_sdf(tmp_path / "vina.sdf")
+    kwargs = dict(higher_is_better_flag=False, top=8, select=3, threshold=0.5)
+    assumed = docking.select_diverse_hits(
+        docking.read_poses(sdf), "minimizedAffinity", direction_assumed=True, **kwargs
+    )
+    assert assumed.direction_assumed is True
+    # Defaults to False when the caller knows the direction.
+    known = docking.select_diverse_hits(
+        docking.read_poses(sdf), "minimizedAffinity", **kwargs
+    )
+    assert known.direction_assumed is False
+
+
+def test_dock_diverse_cli_warns_on_assumed_direction(tmp_path, capsys):
+    pytest.importorskip("rdkit")
+    from molscope.cli import main
+
+    # An unrecognised score field forces the lower-is-better assumption.
+    sdf = _write_ligand_sdf(tmp_path / "vina.sdf", score_field="customScore")
+    rc = main([
+        "dock-diverse", sdf, "--score-field", "customScore",
+        "--top", "8", "--select", "3", "--threshold", "0.5",
+        "--out-dir", str(tmp_path / "out"),
+    ])
+    assert rc == 0
+    assert "assumed" in capsys.readouterr().out
+
+
 # -- feature 3: consensus ranking -------------------------------------------
 
 def test_consensus_rank_joins_by_name_and_averages_ranks():
