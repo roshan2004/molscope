@@ -131,6 +131,7 @@ from .plotting import (
 )
 from .presets import PresetInfo, list_presets
 from .quality import QualityReport, quality_report
+from .report import StructureReportData, build_report
 from .sasa import ResidueExposure, relative_sasa, sasa
 from .structure_prep import StructureReport, prepare_structure
 
@@ -231,6 +232,8 @@ __all__ = [
     "StructureReport",
     "quality_report",
     "QualityReport",
+    "build_report",
+    "StructureReportData",
     "list_presets",
     "PresetInfo",
     "write_cg_index",

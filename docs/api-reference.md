@@ -8,6 +8,7 @@
 - `molscope.read_sdf_frames(path)`: read every record of a multi-record SDF as a list of molecules (one per docking pose), keeping each pose's 3D coordinates and exposing its `> <tag>` data fields (e.g. Vina/Gnina scores) via `Molecule.properties`.
 - `molscope.validate_cif(path)`: optional Gemmi-backed CIF/mmCIF validation.
 - `molscope.quality_report(source)`: lightweight, format-agnostic structure-quality report (atoms, chains, ligand/water/ion inventory, missing per-atom metadata, blank/unknown element symbols, explicit vs inferred bonds, altLoc/occupancy, CIF/PDB warnings). Returns a `QualityReport` with `.summary()`, `.to_dict()`, `.report_markdown()`. CLI: `molscope qc`.
+- `molscope.build_report(source, *, name=None, descriptor_preset="native-basic", include_contact_map=True, contact_cutoff=8.0, coarse_grain=None)`: gather a one-file structure report — QC verdicts (`quality_report` + `prepare_structure`), chain/ligand inventory, a descriptor table, contact-map stats with an embedded heatmap, molecular-graph stats, and an optional coarse-grained preview. Returns a `StructureReportData`; `molscope.report.render_html(data)` / `render_markdown(data)` turn it into a self-contained report string. CLI: `molscope report`.
 - `molscope.write_pdb(molecule, path)`, `write_xyz(molecule, path)`, `write_sdf`, `write_cif`.
 - `molscope.write_frames(frames, path)`: write a list/generator of molecules as a multi-frame `.pdb`/`.xyz`/`.sdf` file (streaming, O(1) memory).
 - `molscope.featurize_many(paths, return_names=False)`: build an ML feature matrix.

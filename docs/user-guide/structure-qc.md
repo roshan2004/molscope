@@ -108,5 +108,32 @@ molscope qc ligand.sdf --out qc.md   # write a Markdown report
     distance- or graph-based ML and you need the topology verdict (backbone
     integrity, chain breaks, net charge).
 
+## One report for everything: `molscope report`
+
+When you want the whole picture in a single shareable file rather than one
+verdict at a time, `molscope report` bundles the QC verdicts above with the
+chain / ligand inventory, a descriptor table, contact-map statistics and an
+embedded heatmap, molecular-graph stats, and an optional coarse-grained preview:
+
+```bash
+molscope report 3ptb.pdb --out-dir report/            # writes report/report.html
+molscope report --fetch 1ubq --format both            # HTML and Markdown
+molscope report 3ptb.pdb --coarse-grain --cg-mapping martini
+```
+
+The HTML is self-contained (figures are inline `data:` URIs), so it travels as a
+single file. The same data is available programmatically:
+
+```python
+import molscope as ms
+
+data = ms.build_report("3ptb.pdb", coarse_grain="residue_com")
+ms.report.render_html(data)        # a self-contained HTML string
+ms.report.render_markdown(data)    # a Markdown string
+```
+
+Sections whose inputs are missing — a residue contact map for a residue-less
+`.xyz`, say — are skipped with a note rather than failing.
+
 [report]: ../api-reference.md
 [quality]: ../api-reference.md

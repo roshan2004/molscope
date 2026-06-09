@@ -9,6 +9,19 @@ API changes; these are called out under **Changed** where they occur.
 
 ## [Unreleased]
 
+### Added
+
+- ``molscope report``: a one-command structure report that bundles the headline
+  outputs of MolScope's existing analyses into a single self-contained file —
+  the parse-quality and ML-readiness QC verdicts, the chain / ligand inventory,
+  a descriptor table, contact-map statistics with an embedded heatmap, molecular
+  graph stats, and an optional coarse-grained preview. Writes HTML (default),
+  Markdown, or both (``--format``); embedded figures are inline ``data:`` URIs,
+  so the HTML is a single portable file. Sections whose inputs are missing (e.g.
+  a residue contact map for a residue-less ``.xyz``) are skipped with a note.
+  Also exposed as the ``ms.build_report(...)`` API returning a
+  ``StructureReportData``.
+
 ## [0.16.0] - 2026-06-08
 
 ### Changed
