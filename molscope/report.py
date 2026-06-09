@@ -374,7 +374,10 @@ def _coarse_grain_section_html(data: StructureReportData) -> str:
     cg = data.coarse_grain
     if cg is None:
         return ""
-    img = f'<img class="fig" alt="coarse-grained beads" src="{cg.image_uri}">' if cg.image_uri else ""
+    img = (
+        f'<img class="fig" alt="coarse-grained beads" src="{cg.image_uri}">'
+        if cg.image_uri else ""
+    )
     return (
         f"<h2>Coarse-grained preview <span class=\"sub\">({escape(cg.mapping)})</span></h2>"
         f"<p>{escape(cg.coverage)}</p>{img}"
@@ -393,7 +396,7 @@ def render_html(data: StructureReportData) -> str:
         items = "".join(f"<li>{escape(n)}</li>" for n in data.notes)
         notes_html = f'<h2>Notes</h2><ul class="note">{items}</ul>'
     body = "".join([
-        f"<h1>Structure report</h1>",
+        "<h1>Structure report</h1>",
         f'<p class="sub">{title} &middot; {escape(data.summary_line)}</p>',
         _qc_section_html(data),
         _ligands_section_html(data),
