@@ -389,6 +389,45 @@ def main(argv=None) -> int:
         "--out", "-o", metavar="PATH", help="write a Markdown report to PATH",
     )
 
+    # -- REPORT subcommand -------------------------------------------------
+    report_parser = subparsers.add_parser(
+        "report",
+        help="build a one-file structure report (QC, chains/ligands, descriptors, "
+        "contact map, graph stats, optional CG preview)",
+    )
+    report_src = report_parser.add_mutually_exclusive_group(required=True)
+    report_src.add_argument("file", nargs="?", help="path to a structure file")
+    report_src.add_argument("--fetch", metavar="PDBID", help="download from RCSB by id")
+    report_parser.add_argument(
+        "--out-dir", "-o", default=".", help="output directory (default: current)",
+    )
+    report_parser.add_argument(
+        "--format", choices=["html", "md", "both"], default="html",
+        help="report format(s) to write (default: html)",
+    )
+    report_parser.add_argument("--name", metavar="TITLE", help="title for the report")
+    report_parser.add_argument(
+        "--preset", choices=["native-basic", "native-3d", "rdkit-basic"],
+        default="native-basic", help="descriptor preset (default: native-basic)",
+    )
+    report_parser.add_argument(
+        "--no-contact-map", dest="contact_map", action="store_false",
+        help="skip the contact-map section",
+    )
+    report_parser.add_argument(
+        "--contact-cutoff", type=float, default=8.0,
+        help="contact-map distance cutoff in angstrom (default: 8.0)",
+    )
+    report_parser.add_argument(
+        "--coarse-grain", action="store_true",
+        help="include a coarse-grained preview section",
+    )
+    report_parser.add_argument(
+        "--cg-mapping", choices=list(COARSE_GRAIN_MAPPINGS), default="residue_com",
+        help="bead mapping for --coarse-grain (default: residue_com)",
+    )
+    report_parser.set_defaults(contact_map=True)
+
     # -- QC subcommand -----------------------------------------------------
     qc_quality_parser = subparsers.add_parser(
         "qc",
@@ -469,6 +508,8 @@ def main(argv=None) -> int:
         return _run_dock_report(args)
     if args.command == "structure-report":
         return _run_structure_report(args)
+    if args.command == "report":
+        return _run_report(args)
     if args.command == "qc":
         return _run_qc(args)
     if args.command == "presets":
@@ -662,6 +703,53 @@ def _run_structure_report(args: argparse.Namespace) -> int:
             print(f"could not write {args.out}: {exc}", file=sys.stderr)
             return 2
         print(f"wrote {args.out}")
+    return 0
+
+
+def _run_report(args: argparse.Namespace) -> int:
+    from . import report as report_mod
+
+    try:
+        if args.fetch:
+            from .io import fetch_file
+
+            source = fetch_file(args.fetch)
+        else:
+            source = args.file
+        data = report_mod.build_report(
+            source,
+            name=args.name,
+            descriptor_preset=args.preset,
+            include_contact_map=args.contact_map,
+            contact_cutoff=args.contact_cutoff,
+            coarse_grain=args.cg_mapping if args.coarse_grain else None,
+        )
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"report failed: {exc}", file=sys.stderr)
+        return 2
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    written = []
+    try:
+        if args.format in ("html", "both"):
+            path = os.path.join(args.out_dir, "report.html")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(report_mod.render_html(data))
+            written.append(path)
+        if args.format in ("md", "both"):
+            path = os.path.join(args.out_dir, "report.md")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(report_mod.render_markdown(data))
+            written.append(path)
+    except OSError as exc:
+        print(f"could not write report: {exc}", file=sys.stderr)
+        return 2
+
+    print(data.summary_line)
+    for note in data.notes:
+        print(f"note: {note}")
+    for path in written:
+        print(f"wrote {path}")
     return 0
 
 
