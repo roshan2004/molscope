@@ -30,6 +30,17 @@ API changes; these are called out under **Changed** where they occur.
   without residue metadata fall back to index matching. Prints a summary, with
   ``--json`` for the full structured result and ``--out`` for a Markdown report.
   Also exposed as ``ms.compare_structures(...)`` returning a ``ComparisonResult``.
+- ``molscope preflight`` and ``ms.preflight(...)``: opt-in guardrails that warn,
+  *before* a descriptor / graph / coarse-grain run, about inputs that silently
+  degrade the result — bonds inferred from geometry rather than the file, missing
+  residue metadata, alternate locations / partial occupancy, absent hydrogens,
+  unrecognised element symbols, and atom counts large enough to make atom-level
+  dense distance work allocate gigabytes. Warnings are scoped per workflow and
+  composed from the existing ``quality_report`` (and, with ``deep=True``,
+  ``prepare_structure``) signals. Available as a standalone command, a
+  ``--preflight`` flag on ``analyze`` / ``export`` / ``coarse-grain``, and a
+  ``preflight=True`` argument to ``Molecule.to_graph`` / ``descriptors`` /
+  ``coarse_grain``; returns a ``PreflightReport``.
 
 ## [0.16.0] - 2026-06-08
 

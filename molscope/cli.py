@@ -73,6 +73,10 @@ def main(argv=None) -> int:
         default="native-basic", help="descriptor preset"
     )
     analyze_parser.add_argument("--jobs", "-j", type=int, default=1, help="parallel jobs")
+    analyze_parser.add_argument(
+        "--preflight", action="store_true",
+        help="warn (to stderr) about inputs that degrade descriptors before computing",
+    )
 
     # -- BINDING-SITE subcommand ------------------------------------------
     binding_parser = subparsers.add_parser(
@@ -128,6 +132,10 @@ def main(argv=None) -> int:
     export_parser.add_argument("--out-dir", "-o", required=True, help="output directory")
 
     export_parser.add_argument("--jobs", "-j", type=int, default=1, help="parallel jobs")
+    export_parser.add_argument(
+        "--preflight", action="store_true",
+        help="warn (to stderr) about inputs that degrade the graph before exporting",
+    )
 
     # -- SELECT subcommand -------------------------------------------------
     select_parser = subparsers.add_parser(
@@ -462,6 +470,28 @@ def main(argv=None) -> int:
                                 help="write a Markdown report to PATH")
     compare_parser.set_defaults(superpose=True, contact_map=True)
 
+    # -- PREFLIGHT subcommand ----------------------------------------------
+    preflight_parser = subparsers.add_parser(
+        "preflight",
+        help="warn about inputs that silently degrade descriptor/graph/CG "
+        "workflows (inferred bonds, missing metadata, altLocs, no hydrogens, "
+        "large dense matrices, ...)",
+    )
+    pf_src = preflight_parser.add_mutually_exclusive_group(required=True)
+    pf_src.add_argument("file", nargs="?", help="path to a structure file")
+    pf_src.add_argument("--fetch", metavar="PDBID", help="download from RCSB by id")
+    preflight_parser.add_argument(
+        "--workflow", choices=["graph", "descriptors", "coarse-grain", "contact-map"],
+        help="keep only warnings relevant to this workflow (default: all)",
+    )
+    preflight_parser.add_argument(
+        "--shallow", dest="deep", action="store_false",
+        help="skip the protein topology checks (chain breaks, missing backbone)",
+    )
+    preflight_parser.add_argument("--json", action="store_true",
+                                  help="print the full JSON report")
+    preflight_parser.set_defaults(deep=True)
+
     # -- QC subcommand -----------------------------------------------------
     qc_quality_parser = subparsers.add_parser(
         "qc",
@@ -493,6 +523,10 @@ def main(argv=None) -> int:
     cg_parser.add_argument(
         "--out", "-o", metavar="PATH",
         help="write the bead model to PATH (.pdb/.cif/.xyz; format by extension)",
+    )
+    cg_parser.add_argument(
+        "--preflight", action="store_true",
+        help="warn (to stderr) about inputs that degrade coarse-graining first",
     )
 
     # -- PRESETS subcommand ------------------------------------------------
@@ -546,6 +580,8 @@ def main(argv=None) -> int:
         return _run_report(args)
     if args.command == "compare":
         return _run_compare(args)
+    if args.command == "preflight":
+        return _run_preflight(args)
     if args.command == "qc":
         return _run_qc(args)
     if args.command == "presets":
@@ -823,6 +859,31 @@ def _run_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_preflight(args: argparse.Namespace) -> int:
+    from .preflight import preflight
+
+    workflow = args.workflow.replace("-", "_") if args.workflow else None
+    try:
+        if args.fetch:
+            from .io import fetch_file
+
+            source = fetch_file(args.fetch)
+        else:
+            source = args.file
+        report = preflight(source, workflow=workflow, deep=args.deep)
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"preflight failed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        import json
+
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(report.summary())
+    return 0
+
+
 def _run_qc(args: argparse.Namespace) -> int:
     from .quality import quality_report
 
@@ -872,6 +933,9 @@ def _run_presets(args: argparse.Namespace) -> int:
 def _run_coarse_grain(args: argparse.Namespace) -> int:
     try:
         mol = fetch(args.fetch) if args.fetch else read(args.file)
+        if args.preflight:
+            source = args.fetch if args.fetch else args.file
+            _print_preflight(source, mol, "coarse_grain")
         beads, report = mol.coarse_grain(mapping=args.mapping, return_report=True)
     except (OSError, ValueError, ImportError) as exc:
         print(f"coarse-grain failed: {exc}", file=sys.stderr)
@@ -995,13 +1059,21 @@ def _parse_ligand(value: str | None):
     return value
 
 
-def _analyze_one(path: str, preset: str):
+def _print_preflight(path: str, mol, workflow: str) -> None:
+    """Print this structure's workflow-scoped preflight warnings to stderr."""
+    for message in mol.preflight(workflow=workflow).messages():
+        print(f"{path}: preflight: {message}", file=sys.stderr)
+
+
+def _analyze_one(path: str, preset: str, preflight: bool = False):
     """Compute flattened descriptors for one structure (worker; must be top-level
     so it is picklable under the ``spawn`` start method on macOS/Windows)."""
     from .descriptors import descriptors, flatten_descriptors
 
     try:
         mol = read(path)
+        if preflight:
+            _print_preflight(path, mol, "descriptors")
         desc = descriptors(mol, preset=preset)
         return {"file": path, **flatten_descriptors(desc)}
     except Exception as e:
@@ -1017,7 +1089,7 @@ def _run_analyze(args: argparse.Namespace) -> int:
     paths = _expand_globs(args.files)
     print(f"Analyzing {len(paths)} structures using {args.jobs} jobs...")
 
-    worker = partial(_analyze_one, preset=args.preset)
+    worker = partial(_analyze_one, preset=args.preset, preflight=args.preflight)
     if args.jobs > 1:
         with Pool(args.jobs) as p:
             results = p.map(worker, paths)
@@ -1102,12 +1174,15 @@ def _write_binding_site_csv(path: str, rows: list[dict]) -> None:
 
 
 def _export_one(
-    path: str, to_fmt: str, out_dir: str, kwargs: dict, graph_kwargs: dict | None = None
+    path: str, to_fmt: str, out_dir: str, kwargs: dict,
+    graph_kwargs: dict | None = None, preflight: bool = False,
 ) -> bool:
     """Export one structure's graph (worker; must be top-level so it is picklable
     under the ``spawn`` start method on macOS/Windows)."""
     try:
         mol = read(path)
+        if preflight:
+            _print_preflight(path, mol, "graph")
         g = mol.to_graph(**(graph_kwargs or {}))
         stem = os.path.splitext(os.path.basename(path))[0]
 
@@ -1160,7 +1235,7 @@ def _run_export(args: argparse.Namespace) -> int:
         graph_kwargs["delaunay"] = True
     worker = partial(
         _export_one, to_fmt=args.to, out_dir=args.out_dir,
-        kwargs=kwargs, graph_kwargs=graph_kwargs,
+        kwargs=kwargs, graph_kwargs=graph_kwargs, preflight=args.preflight,
     )
     if args.jobs > 1:
         with Pool(args.jobs) as p:

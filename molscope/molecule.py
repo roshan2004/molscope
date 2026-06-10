@@ -990,8 +990,22 @@ class Molecule:
 
     # -- coarse-graining ----------------------------------------------------
 
+    def preflight(self, *, workflow: str | None = None, deep: bool = False):
+        """Run preflight guardrails on this molecule.
+
+        Returns a :class:`molscope.preflight.PreflightReport` flagging the inputs
+        that silently degrade descriptor / graph / coarse-grain output (inferred
+        bonds, missing residue metadata, missing hydrogens, alternate locations,
+        large dense-matrix sizes, ...). ``workflow`` scopes the warnings; see
+        :func:`molscope.preflight`. Changes no results.
+        """
+        from .preflight import preflight
+
+        return preflight(self, workflow=workflow, deep=deep)
+
     def coarse_grain(self, mapping="residue_com", weighted: bool = True,
-                     bonds=None, virtual_sites=None, return_report: bool = False):
+                     bonds=None, virtual_sites=None, return_report: bool = False,
+                     preflight: bool = False):
         """Map this structure onto CG beads. See :mod:`molscope.coarsegrain`.
 
         ``mapping`` is ``"residue_com"``, ``"residue_centroid"``, ``"martini"``,
@@ -1005,6 +1019,8 @@ class Molecule:
         coordinate sites derived from already-built bead indices without
         turning them into ordinary bead assignments.
         """
+        if preflight:
+            self.preflight(workflow="coarse_grain").emit(stacklevel=3)
         from .coarsegrain import coarse_grain
 
         return coarse_grain(
@@ -1063,8 +1079,15 @@ class Molecule:
 
     # -- ML descriptors -----------------------------------------------------
 
-    def descriptors(self, **kwargs) -> dict:
-        """Return fixed-size molecular descriptors for quick ML features."""
+    def descriptors(self, *, preflight: bool = False, **kwargs) -> dict:
+        """Return fixed-size molecular descriptors for quick ML features.
+
+        With ``preflight=True`` the descriptor-relevant guardrails (see
+        :meth:`preflight`) are emitted as warnings just before the descriptors
+        are computed; it never changes the returned values.
+        """
+        if preflight:
+            self.preflight(workflow="descriptors").emit(stacklevel=3)
         from .descriptors import descriptors
 
         return descriptors(self, **kwargs)
@@ -1135,6 +1158,7 @@ class Molecule:
         radius: Optional[float] = None,
         delaunay: bool = False,
         min_seq_sep: int = 0,
+        preflight: bool = False,
     ):
         """Build a :class:`molscope.graph.MolecularGraph` from this molecule.
 
@@ -1160,8 +1184,12 @@ class Molecule:
         ``|resid_i - resid_j|`` is below the threshold, the usual way to filter
         out trivial local backbone contacts (and useful for pruning Delaunay's
         long surface edges); it requires residue ids and applies to every edge
-        mode.
+        mode. With ``preflight=True`` the graph-relevant guardrails (see
+        :meth:`preflight`) are emitted as warnings before the graph is built; it
+        never changes the returned graph.
         """
+        if preflight:
+            self.preflight(workflow="graph").emit(stacklevel=3)
         from .graph import MolecularGraph, delaunay_edges, knn_edges, seq_sep_mask
 
         chosen = []
