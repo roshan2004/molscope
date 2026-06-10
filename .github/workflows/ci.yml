@@ -111,4 +111,19 @@ jobs:
       - name: Run validation suite
         # --extra validation so uv run does not prune the reference tools;
         # -rs surfaces any skip reason, -s prints the agreement/recall numbers.
-        run: uv run --python 3.11 --extra validation pytest tests/validation -v -rs -s
+        # --validation-summary-dir writes a generated summary (json + md) that the
+        # next steps publish, so the cross-checks that ran are visible at a glance.
+        run: uv run --python 3.11 --extra validation pytest tests/validation -v -rs -s --validation-summary-dir=.
+
+      - name: Publish validation summary to the run page
+        if: always()
+        run: cat validation-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload validation summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-summary
+          path: |
+            validation-summary.md
+            validation-summary.json
