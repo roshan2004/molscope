@@ -116,7 +116,11 @@ CLI command (most have a one-line Python equivalent); the full list is in the
 
 On any unfamiliar file, `molscope report file.pdb` gives the broadest
 single-command overview and `molscope presets` lists every descriptor, graph,
-and coarse-grain option.
+and coarse-grain option. Before a featurisation run, `molscope preflight
+file.pdb --workflow graph` (or pass `--preflight` to `analyze` / `export` /
+`coarse-grain`, or `preflight=True` to `mol.to_graph()` / `descriptors()` /
+`coarse_grain()`) warns about inputs — inferred bonds, missing metadata, no
+hydrogens, huge dense matrices — that would silently degrade the result.
 
 ## What you can do
 
@@ -129,6 +133,7 @@ and coarse-grain option.
 | Contact maps and distance matrices | [Contact maps](docs/user-guide/contact-maps.md) |
 | DSSP secondary structure, torsions, interfaces, binding sites | [Protein analysis](docs/user-guide/protein-analysis.md) |
 | Native and RDKit-backed descriptors | [Structural descriptors](docs/user-guide/descriptors.md) |
+| Preflight guardrails before featurising (inferred bonds, missing metadata, dense-matrix sizes) | [Structure QC](docs/user-guide/structure-qc.md#preflight-guardrails) |
 | Chemical perception, protein template bonds, bond-order inference | [Chemical perception](docs/user-guide/chemical-perception.md) |
 | Atom/bond and residue-contact graphs for ML (with positional encodings) | [Molecular graphs](docs/user-guide/molecular-graphs.md) |
 | Assemble a split, labelled graph dataset (cache, loaders, target scaling, RCSB fetch) | [Molecular graphs](docs/user-guide/molecular-graphs.md#building-a-dataset-in-one-call) |
@@ -151,6 +156,7 @@ runnable tour over the bundled samples lives in [`examples/tour.py`](examples/to
 | `molscope compare` | compare two static structures: aligned RMSD, per-residue deviations, contact-map delta, descriptor delta |
 | `molscope qc` | lightweight structure-quality report (atoms, chains, ligands, metadata, elements, bonds, altLoc, CIF/PDB warnings) |
 | `molscope structure-report` | ML-readiness check for a protein (residue gaps, missing/truncated atoms, chain breaks, net charge) |
+| `molscope preflight` | warn about inputs that silently degrade descriptor/graph/CG output (inferred bonds, missing metadata, altLocs, no hydrogens, large dense matrices) |
 | `molscope presets` | list the available descriptor / graph / coarse-grain presets and what each one produces |
 | `molscope analyze` | batch descriptor table to CSV |
 | `molscope binding-site` | ligand binding-site contacts and pocket descriptors |
@@ -169,6 +175,7 @@ molscope report examples/data/3ptb.pdb --out-dir report/ --coarse-grain
 molscope compare apo.pdb holo.pdb --atoms ca --out compare.md
 molscope qc examples/data/3ptb.pdb
 molscope structure-report --fetch 1ubq      # is this protein ML-ready?
+molscope preflight examples/data/1ubq.pdb --workflow graph   # what would degrade my graph?
 molscope presets descriptors          # discover the --preset / node_features options
 molscope analyze examples/data/*.pdb --out results.csv --preset native-3d --jobs 4
 molscope export "data/*.cif" --to pyg --out-dir pyg_graphs/ --pe laplacian --jobs 8
