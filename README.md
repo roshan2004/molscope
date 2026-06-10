@@ -97,6 +97,27 @@ This graph-ML on-ramp adds no core dependency (`fmt="pyg"`/`"dgl"` need their
 extras). See [Molecular graphs](docs/user-guide/molecular-graphs.md) and the
 runnable [PDB to a trained GNN](docs/examples/pdb-to-pyg-ml.md) example.
 
+## Choose your workflow
+
+Not sure what to run first? Match your goal to a starting point. Every row is a
+CLI command (most have a one-line Python equivalent); the full list is in the
+[Command line](#command-line) table below.
+
+| Your goal | Start here | Next step |
+| --- | --- | --- |
+| **Look at a structure** | `molscope file.pdb` — render it, save a PNG/GIF | `molscope report file.pdb` for a one-file overview |
+| **Sanity-check a file** | `molscope qc file.pdb` — did it parse cleanly? (any format) | `molscope structure-report file.pdb` — is this protein ML-ready? |
+| **Compare two structures** | `molscope compare a.pdb b.pdb` — RMSD, per-residue and contact/descriptor deltas | add `--out diff.md` for a written report |
+| **Featurise to a table** | `molscope presets descriptors` — see what's available | `molscope analyze "*.pdb" --out features.csv` |
+| **Build an ML graph dataset** | `ms.build_dataset(...)` (API) or `molscope export … --to pyg` (CLI) | `molscope prepare table.csv` for train/val/test splits |
+| **Coarse-grain a structure** | `molscope presets coarse-grain` → `molscope coarse-grain file.pdb --mapping martini` | |
+| **Triage docking output** | `molscope dock-report poses.sdf` — HTML report + top poses | `dock-summary` · `dock-diverse` · `dock-rank` |
+| **Drive it from an AI assistant** | `pip install "molscope[mcp]"`, then add the [MCP server](#use-from-an-ai-assistant-mcp) | ask for analyses in natural language |
+
+On any unfamiliar file, `molscope report file.pdb` gives the broadest
+single-command overview and `molscope presets` lists every descriptor, graph,
+and coarse-grain option.
+
 ## What you can do
 
 | Capability | Guide |
@@ -129,10 +150,12 @@ runnable tour over the bundled samples lives in [`examples/tour.py`](examples/to
 | `molscope report` | one-file structure report (QC, chains/ligands, descriptors, contact map, graph stats, optional CG preview) as HTML/Markdown |
 | `molscope compare` | compare two static structures: aligned RMSD, per-residue deviations, contact-map delta, descriptor delta |
 | `molscope qc` | lightweight structure-quality report (atoms, chains, ligands, metadata, elements, bonds, altLoc, CIF/PDB warnings) |
+| `molscope structure-report` | ML-readiness check for a protein (residue gaps, missing/truncated atoms, chain breaks, net charge) |
 | `molscope presets` | list the available descriptor / graph / coarse-grain presets and what each one produces |
 | `molscope analyze` | batch descriptor table to CSV |
 | `molscope binding-site` | ligand binding-site contacts and pocket descriptors |
 | `molscope export` | batch graph export to PyG / DGL / NetworkX |
+| `molscope prepare` | build ML-ready train/validation/test splits from a table or SDF |
 | `molscope coarse-grain` | map a structure to CG beads and write a coordinate file (PDB CONECT bonds) |
 | `molscope select` | diverse subset from a CSV/XLSX table |
 | `molscope dock-summary` | rank docking poses from an SDF; summary + top-hit tables + score plot |
@@ -145,9 +168,11 @@ molscope examples/data/1fqy.pdb --select atom_name=CA --color-by residue --save 
 molscope report examples/data/3ptb.pdb --out-dir report/ --coarse-grain
 molscope compare apo.pdb holo.pdb --atoms ca --out compare.md
 molscope qc examples/data/3ptb.pdb
+molscope structure-report --fetch 1ubq      # is this protein ML-ready?
 molscope presets descriptors          # discover the --preset / node_features options
 molscope analyze examples/data/*.pdb --out results.csv --preset native-3d --jobs 4
 molscope export "data/*.cif" --to pyg --out-dir pyg_graphs/ --pe laplacian --jobs 8
+molscope prepare data.csv --smiles-col SMILES --split scaffold --out-dir prepared/
 molscope coarse-grain examples/data/1fqy.pdb --mapping martini --out cg.pdb
 molscope select molecules.csv --smiles-col SMILES --compute-descriptors -n 100 --out picked.csv
 molscope dock-summary vina_out.sdf --score-field minimizedAffinity --top 20
