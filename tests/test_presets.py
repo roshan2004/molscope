@@ -115,8 +115,9 @@ def test_cli_presets_json(capsys):
     rc = main(["presets", "graph", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
-    assert all(p["category"] == "graph" for p in payload)
-    assert any(p["name"] == "ml" for p in payload)
+    presets = payload["result"]
+    assert all(p["category"] == "graph" for p in presets)
+    assert any(p["name"] == "ml" for p in presets)
 
 
 def test_cli_presets_rejects_unknown_category():

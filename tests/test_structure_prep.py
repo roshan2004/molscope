@@ -195,7 +195,8 @@ def test_cli_structure_report_json_and_out(tmp_path, capsys):
     ])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out.split("wrote")[0])
-    assert payload["n_polymer_residues"] == 76
+    assert payload["command"] == "structure-report"
+    assert payload["result"]["n_polymer_residues"] == 76
     assert out.exists()
     assert "# Structure preparation report" in out.read_text()
 

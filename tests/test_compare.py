@@ -173,8 +173,10 @@ def test_cli_compare_json(model_files, capsys):
     rc = main(["compare", a, b, "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["match_method"] == "residue"
-    assert payload["rmsd"] >= 0
+    assert payload["command"] == "compare"
+    assert payload["input"] == [a, b]
+    assert payload["result"]["match_method"] == "residue"
+    assert payload["result"]["rmsd"] >= 0
 
 
 def test_cli_compare_no_superpose_and_no_contact_map(model_files, capsys):

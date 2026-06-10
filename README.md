@@ -186,6 +186,31 @@ molscope dock-summary vina_out.sdf --score-field minimizedAffinity --top 20
 molscope dock-diverse vina_out.sdf --top 500 --select 50
 ```
 
+**Pipeline-friendly output.** Every `--json` command (`qc`, `structure-report`,
+`compare`, `preflight`, `presets`) prints the same envelope, so a downstream tool
+can read one shape regardless of the command:
+
+```jsonc
+{
+  "tool": "molscope", "version": "0.16.0", "command": "qc",
+  "input": "3ptb.pdb",        // path/id, or a list for batch commands
+  "parser": "pdb",            // reader chosen from the extension
+  "backends": ["scipy"],      // optional packages this run engaged
+  "warnings": [ ... ],
+  "result": { ... }           // the command-specific payload
+}
+```
+
+The batch commands take `--manifest PATH` (`analyze`, `export`) to write that
+envelope alongside the outputs, with `feature_names` (CSV columns / graph
+node+edge features) and `skipped` (each input that failed, with the reason) —
+handy for reproducible runs and for catching dropped structures:
+
+```bash
+molscope analyze "data/*.pdb" --out features.csv --manifest run.json
+molscope export "data/*.cif" --to pyg -o graphs/ --manifest run.json
+```
+
 ## Use from an AI assistant (MCP)
 
 MolScope ships an optional [Model Context Protocol](https://modelcontextprotocol.io)

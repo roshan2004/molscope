@@ -160,8 +160,9 @@ def test_cli_preflight_json_and_workflow(capsys):
     rc = main(["preflight", CRYSTAL, "--workflow", "graph", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["workflow"] == "graph"
-    assert "inferred_bonds" in [w["code"] for w in payload["warnings"]]
+    assert payload["command"] == "preflight"
+    assert payload["result"]["workflow"] == "graph"
+    assert "inferred_bonds" in [w["code"] for w in payload["result"]["warnings"]]
 
 
 def test_cli_preflight_shallow_skips_topology(capsys):
