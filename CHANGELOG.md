@@ -21,6 +21,15 @@ API changes; these are called out under **Changed** where they occur.
   a residue contact map for a residue-less ``.xyz``) are skipped with a note.
   Also exposed as the ``ms.build_report(...)`` API returning a
   ``StructureReportData``.
+- ``molscope compare a.pdb b.pdb``: a static-structure comparison reporting the
+  aligned (Kabsch) RMSD, per-residue deviations, a residue contact-map delta
+  (contacts gained vs lost), and a per-feature descriptor delta. Atoms are
+  matched by ``(chain, resid, insertion code, atom name)`` so it works on two
+  *different* files — different atom counts, ordering, or point mutations — with
+  ``--atoms all|ca|backbone`` choosing the matched/superposed set; structures
+  without residue metadata fall back to index matching. Prints a summary, with
+  ``--json`` for the full structured result and ``--out`` for a Markdown report.
+  Also exposed as ``ms.compare_structures(...)`` returning a ``ComparisonResult``.
 
 ## [0.16.0] - 2026-06-08
 

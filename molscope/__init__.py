@@ -51,6 +51,7 @@ from .coarsegrain import write_index as write_cg_index
 from .coarsegrain import write_itp as write_cg_itp
 from .coarsegrain import write_mapping as write_cg_mapping
 from .coarsegrain import write_openmm_xml as write_cg_openmm_xml
+from .compare import ComparisonResult, compare_structures
 from .contactmap import ContactMap
 from .contacts import (
     BindingSite,
@@ -234,6 +235,8 @@ __all__ = [
     "QualityReport",
     "build_report",
     "StructureReportData",
+    "compare_structures",
+    "ComparisonResult",
     "list_presets",
     "PresetInfo",
     "write_cg_index",

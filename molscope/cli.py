@@ -428,6 +428,40 @@ def main(argv=None) -> int:
     )
     report_parser.set_defaults(contact_map=True)
 
+    # -- COMPARE subcommand ------------------------------------------------
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="compare two static structures: aligned RMSD, per-residue deviations, "
+        "contact-map delta, descriptor delta",
+    )
+    compare_parser.add_argument("files", nargs=2, metavar=("A", "B"),
+                                help="two structure files (A is the reference)")
+    compare_parser.add_argument(
+        "--atoms", choices=["all", "ca", "backbone"], default="all",
+        help="atom set matched and superposed (default: all common atoms)",
+    )
+    compare_parser.add_argument(
+        "--no-superpose", dest="superpose", action="store_false",
+        help="report RMSD without Kabsch superposition",
+    )
+    compare_parser.add_argument(
+        "--no-contact-map", dest="contact_map", action="store_false",
+        help="skip the contact-map delta",
+    )
+    compare_parser.add_argument(
+        "--contact-cutoff", type=float, default=8.0,
+        help="contact-map distance cutoff in angstrom (default: 8.0)",
+    )
+    compare_parser.add_argument(
+        "--preset", choices=["native-basic", "native-3d", "rdkit-basic"],
+        default="native-basic", help="descriptor preset (default: native-basic)",
+    )
+    compare_parser.add_argument("--json", action="store_true",
+                                help="print the full JSON report")
+    compare_parser.add_argument("--out", "-o", metavar="PATH",
+                                help="write a Markdown report to PATH")
+    compare_parser.set_defaults(superpose=True, contact_map=True)
+
     # -- QC subcommand -----------------------------------------------------
     qc_quality_parser = subparsers.add_parser(
         "qc",
@@ -510,6 +544,8 @@ def main(argv=None) -> int:
         return _run_structure_report(args)
     if args.command == "report":
         return _run_report(args)
+    if args.command == "compare":
+        return _run_compare(args)
     if args.command == "qc":
         return _run_qc(args)
     if args.command == "presets":
@@ -750,6 +786,40 @@ def _run_report(args: argparse.Namespace) -> int:
         print(f"note: {note}")
     for path in written:
         print(f"wrote {path}")
+    return 0
+
+
+def _run_compare(args: argparse.Namespace) -> int:
+    from .compare import compare_structures
+
+    try:
+        result = compare_structures(
+            args.files[0], args.files[1],
+            atoms=args.atoms,
+            superpose=args.superpose,
+            include_contact_map=args.contact_map,
+            contact_cutoff=args.contact_cutoff,
+            descriptor_preset=args.preset,
+        )
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"compare failed: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        import json
+
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print(result.summary())
+
+    if args.out:
+        try:
+            with open(args.out, "w", encoding="utf-8") as handle:
+                handle.write(result.report_markdown())
+        except OSError as exc:
+            print(f"could not write {args.out}: {exc}", file=sys.stderr)
+            return 2
+        print(f"wrote {args.out}")
     return 0
 
 
