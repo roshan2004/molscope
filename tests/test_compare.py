@@ -69,6 +69,38 @@ def test_differing_atom_counts_restrict_to_common_residues(models):
     assert result.n_matched_atoms == 40
 
 
+def test_backbone_matching_uses_backbone_atoms(models):
+    result = compare_structures(models[0], models[1], atoms="backbone")
+
+    assert result.atom_set == "backbone"
+    # Up to four backbone atoms (N, CA, C, O) per residue, more than one.
+    assert result.n_matched_atoms > result.n_common_residues
+    assert all(d.n_atoms <= 4 for d in result.per_residue)
+
+
+def test_no_superpose_reports_raw_rmsd(models):
+    result = compare_structures(models[0], models[1], superpose=False)
+
+    assert result.superposed is False
+    assert result.rmsd == result.rmsd_unaligned
+    assert "no superposition" in result.summary()
+
+
+def test_no_common_atoms_raises(models):
+    # Disjoint residue ranges share no (chain, resid, atom name) keys.
+    a = models[0].select(resid=(1, 30))
+    b = models[1].select(resid=(40, 76))
+    with pytest.raises(ValueError, match="no atoms could be matched"):
+        compare_structures(a, b)
+
+
+def test_contact_delta_skipped_with_too_few_common_residues(models):
+    result = compare_structures(models[0], models[1].select(resid=1))
+
+    assert result.contact is None
+    assert any("common residue" in n for n in result.notes)
+
+
 def test_index_fallback_for_metadata_free_structures():
     result = compare_structures(XYZ, XYZ)
 
@@ -143,6 +175,15 @@ def test_cli_compare_json(model_files, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["match_method"] == "residue"
     assert payload["rmsd"] >= 0
+
+
+def test_cli_compare_no_superpose_and_no_contact_map(model_files, capsys):
+    a, b = model_files
+    rc = main(["compare", a, b, "--no-superpose", "--no-contact-map"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "no superposition" in out
+    assert "contact map" not in out
 
 
 def test_cli_compare_missing_file_returns_2(tmp_path, capsys):
