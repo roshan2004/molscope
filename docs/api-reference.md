@@ -29,6 +29,7 @@ Graph-dataset assembly (the ML on-ramp):
 - `molscope.select_pocket(mol, ligand=None, cutoff=4.5)` (also `Molecule.select_pocket(...)`): returns a `Pocket` (a `BindingSite` bound to its molecule) whose `describe_environment()` renders a chemistry-aware natural-language paragraph for LLM / RAG prompts; `environment()`/`analyze_pocket(mol, site)` return the structured `PocketEnvironment`.
 - `molscope.backbone_torsions(mol)`: per-residue phi/psi/omega.
 - `molscope.sasa(mol, probe_radius=1.4, n_points=192, level="atom")`: approximate Shrake-Rupley solvent-accessible surface area (also `Molecule.sasa(...)`).
+- `molscope.compare_structures(a, b, *, atoms="all", superpose=True, include_contact_map=True, contact_cutoff=8.0, descriptor_preset="native-basic")`: static comparison of two structures (paths or `Molecule`s). Matches atoms by `(chain, resid, insertion code, atom name)` — so it handles different atom counts, ordering, or point mutations — then returns a `ComparisonResult` with the aligned RMSD, per-residue deviations, a residue contact-map delta over the common residues, and a per-feature descriptor delta. `atoms` is `"all"`/`"ca"`/`"backbone"`; `ComparisonResult` has `.summary()`, `.to_dict()`, `.report_markdown()`. CLI: `molscope compare`.
 
 Residue identity helpers:
 
