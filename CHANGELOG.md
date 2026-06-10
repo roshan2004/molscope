@@ -11,6 +11,25 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- Pipeline-friendly, standardized output across the CLI. Every ``--json`` command
+  now wraps its payload in one common envelope — ``tool``, ``version``,
+  ``command``, ``input``, ``parser`` (the reader chosen from the extension),
+  ``backends`` (optional packages the run actually engaged, e.g. ``gemmi`` /
+  ``scipy`` / ``rdkit``), ``warnings``, and ``result`` — so a downstream tool can
+  read the same keys regardless of which command produced the JSON. The batch
+  commands gain a ``--manifest PATH`` flag (``analyze``, ``export``) that writes
+  the same envelope alongside the outputs with ``feature_names`` (the CSV columns
+  / graph node+edge features) and ``skipped`` (one entry per input that failed,
+  with the reason). Shared helpers live in ``molscope/cli_output.py``.
+
+### Changed
+
+- **Breaking (CLI output):** ``molscope qc``, ``structure-report``, ``compare``,
+  ``preflight`` and ``presets`` with ``--json`` now print the standard envelope
+  above instead of the bare report. The previous top-level fields move under
+  ``result`` (e.g. ``payload["ligands"]`` is now ``payload["result"]["ligands"]``,
+  and ``presets --json`` is ``{... "result": [ ... ]}`` rather than a bare list).
+
 - ``molscope report``: a one-command structure report that bundles the headline
   outputs of MolScope's existing analyses into a single self-contained file —
   the parse-quality and ML-readiness QC verdicts, the chain / ligand inventory,

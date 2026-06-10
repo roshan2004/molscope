@@ -77,6 +77,11 @@ def main(argv=None) -> int:
         "--preflight", action="store_true",
         help="warn (to stderr) about inputs that degrade descriptors before computing",
     )
+    analyze_parser.add_argument(
+        "--manifest", metavar="PATH",
+        help="write a JSON run manifest (inputs, parser, backends, feature names, "
+        "skipped files) alongside the CSV",
+    )
 
     # -- BINDING-SITE subcommand ------------------------------------------
     binding_parser = subparsers.add_parser(
@@ -135,6 +140,11 @@ def main(argv=None) -> int:
     export_parser.add_argument(
         "--preflight", action="store_true",
         help="warn (to stderr) about inputs that degrade the graph before exporting",
+    )
+    export_parser.add_argument(
+        "--manifest", metavar="PATH",
+        help="write a JSON run manifest (inputs, parser, backends, node/edge "
+        "feature names, skipped files) alongside the graphs",
     )
 
     # -- SELECT subcommand -------------------------------------------------
@@ -745,9 +755,22 @@ def _run_prepare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _emit_inspection_json(command, args, resolved_source, *, before, result, warnings) -> None:
+    """Print a single-input command's result wrapped in the standard envelope."""
+    from .cli_output import backends_since, emit_json, envelope, parser_name
+
+    label = args.file if getattr(args, "file", None) else f"rcsb:{args.fetch}"
+    emit_json(envelope(
+        command, source=label, parser=parser_name(resolved_source),
+        backends=backends_since(before), warnings=list(warnings), result=result,
+    ))
+
+
 def _run_structure_report(args: argparse.Namespace) -> int:
+    from .cli_output import backend_snapshot
     from .structure_prep import prepare_structure
 
+    before = backend_snapshot()
     try:
         if args.fetch:
             from .io import fetch_file
@@ -761,9 +784,10 @@ def _run_structure_report(args: argparse.Namespace) -> int:
         return 2
 
     if args.json:
-        import json
-
-        print(json.dumps(report.to_dict(), indent=2))
+        _emit_inspection_json(
+            "structure-report", args, source, before=before,
+            result=report.to_dict(), warnings=report.blockers + report.warnings,
+        )
     else:
         print(report.summary())
 
@@ -826,8 +850,10 @@ def _run_report(args: argparse.Namespace) -> int:
 
 
 def _run_compare(args: argparse.Namespace) -> int:
+    from .cli_output import backend_snapshot
     from .compare import compare_structures
 
+    before = backend_snapshot()
     try:
         result = compare_structures(
             args.files[0], args.files[1],
@@ -842,9 +868,19 @@ def _run_compare(args: argparse.Namespace) -> int:
         return 2
 
     if args.json:
-        import json
+        from .cli_output import (
+            backends_since,
+            emit_json,
+            envelope,
+            parser_for_inputs,
+        )
 
-        print(json.dumps(result.to_dict(), indent=2))
+        emit_json(envelope(
+            "compare", source=list(args.files),
+            parser=parser_for_inputs(args.files),
+            backends=backends_since(before), warnings=result.notes,
+            result=result.to_dict(),
+        ))
     else:
         print(result.summary())
 
@@ -860,8 +896,10 @@ def _run_compare(args: argparse.Namespace) -> int:
 
 
 def _run_preflight(args: argparse.Namespace) -> int:
+    from .cli_output import backend_snapshot
     from .preflight import preflight
 
+    before = backend_snapshot()
     workflow = args.workflow.replace("-", "_") if args.workflow else None
     try:
         if args.fetch:
@@ -876,17 +914,20 @@ def _run_preflight(args: argparse.Namespace) -> int:
         return 2
 
     if args.json:
-        import json
-
-        print(json.dumps(report.to_dict(), indent=2))
+        _emit_inspection_json(
+            "preflight", args, source, before=before,
+            result=report.to_dict(), warnings=report.messages(),
+        )
     else:
         print(report.summary())
     return 0
 
 
 def _run_qc(args: argparse.Namespace) -> int:
+    from .cli_output import backend_snapshot
     from .quality import quality_report
 
+    before = backend_snapshot()
     try:
         if args.fetch:
             from .io import fetch_file
@@ -900,9 +941,10 @@ def _run_qc(args: argparse.Namespace) -> int:
         return 2
 
     if args.json:
-        import json
-
-        print(json.dumps(report.to_dict(), indent=2))
+        _emit_inspection_json(
+            "qc", args, source, before=before,
+            result=report.to_dict(), warnings=report.issues,
+        )
     else:
         print(report.summary())
 
@@ -922,9 +964,12 @@ def _run_presets(args: argparse.Namespace) -> int:
 
     presets = list_presets(args.category)
     if args.json:
-        import json
+        from .cli_output import emit_json, envelope
 
-        print(json.dumps([p.to_dict() for p in presets], indent=2))
+        emit_json(envelope(
+            "presets", source=args.category,
+            result=[p.to_dict() for p in presets],
+        ))
     else:
         print(format_presets(presets, show_features=args.features))
     return 0
@@ -1065,6 +1110,22 @@ def _print_preflight(path: str, mol, workflow: str) -> None:
         print(f"{path}: preflight: {message}", file=sys.stderr)
 
 
+def _write_run_manifest(path, command, inputs, resolved_paths, before, **extra) -> None:
+    """Write a batch command's standard run manifest (envelope) to ``path``."""
+    from .cli_output import (
+        backends_since,
+        envelope,
+        parser_for_inputs,
+        write_json,
+    )
+
+    write_json(path, envelope(
+        command, source=list(inputs), parser=parser_for_inputs(resolved_paths),
+        backends=backends_since(before), n_inputs=len(resolved_paths), **extra,
+    ))
+    print(f"wrote {path}")
+
+
 def _analyze_one(path: str, preset: str, preflight: bool = False):
     """Compute flattened descriptors for one structure (worker; must be top-level
     so it is picklable under the ``spawn`` start method on macOS/Windows)."""
@@ -1075,10 +1136,10 @@ def _analyze_one(path: str, preset: str, preflight: bool = False):
         if preflight:
             _print_preflight(path, mol, "descriptors")
         desc = descriptors(mol, preset=preset)
-        return {"file": path, **flatten_descriptors(desc)}
+        return (path, {"file": path, **flatten_descriptors(desc)}, None)
     except Exception as e:
         print(f"Error processing {path}: {e}", file=sys.stderr)
-        return None
+        return (path, None, str(e))
 
 
 def _run_analyze(args: argparse.Namespace) -> int:
@@ -1086,30 +1147,41 @@ def _run_analyze(args: argparse.Namespace) -> int:
     from functools import partial
     from multiprocessing import Pool
 
+    from .cli_output import backend_snapshot
+
+    before = backend_snapshot()
     paths = _expand_globs(args.files)
     print(f"Analyzing {len(paths)} structures using {args.jobs} jobs...")
 
     worker = partial(_analyze_one, preset=args.preset, preflight=args.preflight)
     if args.jobs > 1:
         with Pool(args.jobs) as p:
-            results = p.map(worker, paths)
+            outcomes = p.map(worker, paths)
     else:
-        results = [worker(p) for p in paths]
+        outcomes = [worker(p) for p in paths]
 
-    results = [r for result in results if (r := result) is not None]
+    rows = [row for (_, row, _err) in outcomes if row is not None]
+    skipped = [{"input": p, "error": err} for (p, row, err) in outcomes if row is None]
 
-    if not results:
+    if rows:
+        keys = list(rows[0].keys())
+        with open(args.out, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=keys)
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"Saved descriptors for {len(rows)} structures to {args.out}")
+    else:
         print("No results to save.")
-        return 1
 
-    keys = results[0].keys()
-    with open(args.out, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(results)
+    if args.manifest:
+        feature_names = [k for k in rows[0] if k != "file"] if rows else []
+        _write_run_manifest(
+            args.manifest, "analyze", args.files, paths, before,
+            n_written=len(rows), skipped=skipped,
+            feature_names=feature_names, output=args.out, preset=args.preset,
+        )
 
-    print(f"Saved descriptors for {len(results)} structures to {args.out}")
-    return 0
+    return 0 if rows else 1
 
 
 def _run_binding_site(args: argparse.Namespace) -> int:
@@ -1176,9 +1248,11 @@ def _write_binding_site_csv(path: str, rows: list[dict]) -> None:
 def _export_one(
     path: str, to_fmt: str, out_dir: str, kwargs: dict,
     graph_kwargs: dict | None = None, preflight: bool = False,
-) -> bool:
+) -> tuple:
     """Export one structure's graph (worker; must be top-level so it is picklable
-    under the ``spawn`` start method on macOS/Windows)."""
+    under the ``spawn`` start method on macOS/Windows).
+
+    Returns ``(path, ok, error)`` so the caller can build a run manifest."""
     try:
         mol = read(path)
         if preflight:
@@ -1205,16 +1279,19 @@ def _export_one(
             out_path = os.path.join(out_dir, f"{stem}.json")
             with open(out_path, "w") as f:
                 json.dump(nx.node_link_data(ng), f)
-        return True
+        return (path, True, None)
     except Exception as e:
         print(f"Error exporting {path}: {e}", file=sys.stderr)
-        return False
+        return (path, False, str(e))
 
 
 def _run_export(args: argparse.Namespace) -> int:
     from functools import partial
     from multiprocessing import Pool
 
+    from .cli_output import backend_snapshot
+
+    before = backend_snapshot()
     paths = _expand_globs(args.files)
     os.makedirs(args.out_dir, exist_ok=True)
 
@@ -1239,12 +1316,33 @@ def _run_export(args: argparse.Namespace) -> int:
     )
     if args.jobs > 1:
         with Pool(args.jobs) as p:
-            successes = p.map(worker, paths)
+            outcomes = p.map(worker, paths)
     else:
-        successes = [worker(p) for p in paths]
+        outcomes = [worker(p) for p in paths]
 
-    print(f"Successfully exported {sum(successes)} structures to {args.out_dir}")
+    n_ok = sum(1 for (_, ok, _err) in outcomes if ok)
+    skipped = [{"input": p, "error": err} for (p, ok, err) in outcomes if not ok]
+    print(f"Successfully exported {n_ok} structures to {args.out_dir}")
+
+    if args.manifest:
+        _write_run_manifest(
+            args.manifest, "export", args.files, paths, before,
+            n_written=n_ok, skipped=skipped,
+            feature_names=_graph_feature_names(),
+            out_dir=args.out_dir, to=args.to,
+        )
+
     return 0
+
+
+def _graph_feature_names() -> dict:
+    """Default node/edge graph feature names for the export manifest (best effort)."""
+    try:
+        from .graph import edge_feature_names, node_feature_names
+
+        return {"node": node_feature_names(), "edge": edge_feature_names()}
+    except (ImportError, ValueError):  # pragma: no cover - defensive
+        return {}
 
 
 

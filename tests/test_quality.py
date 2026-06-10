@@ -148,7 +148,8 @@ def test_cli_qc_json_and_out(tmp_path, capsys):
     assert rc == 0
     captured = capsys.readouterr().out
     payload = json.loads(captured.split("wrote")[0])
-    assert payload["ligands"] == {"BEN": 1}
+    assert payload["command"] == "qc"
+    assert payload["result"]["ligands"] == {"BEN": 1}
     assert out_path.exists()
     assert "Structure quality report" in out_path.read_text()
 
