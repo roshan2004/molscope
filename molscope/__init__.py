@@ -130,6 +130,7 @@ from .plotting import (
     plot_rmsd_heatmap,
     view_mapping,
 )
+from .preflight import PreflightReport, PreflightWarning, preflight
 from .presets import PresetInfo, list_presets
 from .quality import QualityReport, quality_report
 from .report import StructureReportData, build_report
@@ -233,6 +234,9 @@ __all__ = [
     "StructureReport",
     "quality_report",
     "QualityReport",
+    "preflight",
+    "PreflightReport",
+    "PreflightWarning",
     "build_report",
     "StructureReportData",
     "compare_structures",

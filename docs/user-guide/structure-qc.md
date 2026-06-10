@@ -135,5 +135,45 @@ ms.report.render_markdown(data)    # a Markdown string
 Sections whose inputs are missing — a residue contact map for a residue-less
 `.xyz`, say — are skipped with a note rather than failing.
 
+## Preflight guardrails
+
+`qc` and `structure-report` answer "is this file any good?" up front. **Preflight**
+answers the narrower, just-in-time question "will *this* featurisation step
+quietly give me a worse result on this input?" — and it is built to run right
+before that step.
+
+It reuses the same cheap signals (`quality_report`, and with `deep=True`
+`prepare_structure`) and turns the ones that matter into explicit, workflow-scoped
+warnings: bonds **inferred** from geometry rather than read from the file (so graph
+edges and CG bonds depend on a distance threshold), **missing residue metadata**
+(no residue-level features), **no hydrogens**, alternate locations / partial
+occupancy, unrecognised element symbols, and atom counts large enough that an
+atom-level dense distance matrix would allocate gigabytes.
+
+```bash
+molscope preflight 3ptb.pdb                       # all warnings, with topology checks
+molscope preflight 1ubq.pdb --workflow graph      # only what affects to_graph()
+molscope export "data/*.pdb" --to pyg -o graphs/ --preflight   # warn per structure first
+```
+
+Or opt in from Python, right where the work happens:
+
+```python
+import molscope as ms
+
+mol = ms.read("1ubq.pdb")
+mol.preflight(workflow="graph").summary()   # inspect the PreflightReport
+g = mol.to_graph(preflight=True)            # same graph, warnings emitted first
+desc = mol.descriptors(preflight=True)      # likewise; values are unchanged
+```
+
+Preflight never changes a result — it only tells you when one is about to be
+quietly degraded.
+
+!!! tip "Which QC tool do I want?"
+    `molscope qc` for "did this file parse?", `molscope structure-report` for "is
+    this protein ML-ready?", and `molscope preflight` for "what about *this*
+    descriptor / graph / CG run on this input?" right before you launch it.
+
 [report]: ../api-reference.md
 [quality]: ../api-reference.md
