@@ -11,6 +11,15 @@ API changes; these are called out under **Changed** where they occur.
 
 ### Added
 
+- A generated validation summary. Running the validation suite with
+  ``--validation-summary-dir=DIR`` now writes ``validation-summary.md`` and
+  ``validation-summary.json`` derived from the actual run — a table of area,
+  reference tool, and passed/skipped/failed counts, with per-check detail for
+  anything skipped or failed. The CI **validation** job publishes it to the
+  workflow run page and uploads it as an artifact, so the scientific
+  cross-checks that ran are visible without reading the logs. Because every count
+  comes from the run, the summary cannot drift from the tests.
+
 - Pipeline-friendly, standardized output across the CLI. Every ``--json`` command
   now wraps its payload in one common envelope — ``tool``, ``version``,
   ``command``, ``input``, ``parser`` (the reader chosen from the extension),

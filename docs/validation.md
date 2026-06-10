@@ -44,6 +44,28 @@ conda create -n plip-ref -c conda-forge plip openbabel -y
 The interaction test discovers it automatically (override the launcher with
 `MOLSCOPE_PLIP_CMD`), and skips cleanly when PLIP is absent.
 
+## Generated summary
+
+The validation run can emit a short, generated summary of itself, so the
+scientific cross-checks that actually ran (and passed, or were skipped because a
+reference tool was absent) are visible at a glance instead of buried in the test
+log. Add `--validation-summary-dir`:
+
+```bash
+uv run pytest tests/validation -v -rs -s --validation-summary-dir=.
+```
+
+This writes `validation-summary.md` (a table of area, reference, and
+passed/skipped/failed counts, with per-check detail for anything skipped or
+failed) and `validation-summary.json` (the same data, machine-readable). Every
+number is produced by the run itself, so the summary cannot drift from the
+tests; the area labels live in `tests/validation/_summary.py`.
+
+The CI **validation** job runs this on every push and PR, prints the Markdown to
+the workflow run page (the "Summary" tab), and uploads both files as the
+`validation-summary` artifact. That run, with all reference tools installed, is
+the authoritative snapshot of what is currently cross-checked.
+
 ## Current panel scope
 
 The reference checks are targeted scientific smoke tests rather than a full
